@@ -22,7 +22,6 @@ class NuvioApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
-        tvHomePublisher.start()
     }
 
     override fun newImageLoader(): ImageLoader {

@@ -32,6 +32,8 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -44,6 +46,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.nuvio.tv.domain.model.Collection
 import com.nuvio.tv.domain.model.CollectionFolder
 import com.nuvio.tv.domain.model.PosterShape
@@ -125,6 +128,8 @@ private fun FolderCard(
     val tileWidth: Dp
     val tileHeight: Dp
     var isFocused by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val density = LocalDensity.current
     when (folder.tileShape) {
         PosterShape.POSTER -> { tileWidth = 126.dp; tileHeight = 189.dp }
         PosterShape.LANDSCAPE -> { tileWidth = 224.dp; tileHeight = 126.dp }
@@ -137,6 +142,23 @@ private fun FolderCard(
         fallbackSeed = "${collection.title}:${folder.title}:${folder.coverEmoji.orEmpty()}",
         enabled = collection.focusGlowEnabled
     )
+    val activeImageUrl = rememberCollectionFolderCardImageUrl(folder = folder, isFocused = isFocused)
+    val requestWidthPx = remember(tileWidth, density) {
+        with(density) { tileWidth.roundToPx() }
+    }
+    val requestHeightPx = remember(tileHeight, density) {
+        with(density) { tileHeight.roundToPx() }
+    }
+    val imageModel = remember(activeImageUrl, requestWidthPx, requestHeightPx, context) {
+        activeImageUrl?.let { imageUrl ->
+            ImageRequest.Builder(context)
+                .data(imageUrl)
+                .crossfade(false)
+                .memoryCacheKey("${imageUrl}_${requestWidthPx}x${requestHeightPx}")
+                .size(width = requestWidthPx, height = requestHeightPx)
+                .build()
+        }
+    }
 
     Card(
         onClick = onClick,
@@ -162,10 +184,9 @@ private fun FolderCard(
         glow = cardGlow
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            val activeImageUrl = collectionFolderCardImageUrl(folder, isFocused)
-            if (!activeImageUrl.isNullOrBlank()) {
+            if (imageModel != null) {
                 AsyncImage(
-                    model = activeImageUrl,
+                    model = imageModel,
                     contentDescription = folder.title,
                     modifier = Modifier
                         .fillMaxSize()

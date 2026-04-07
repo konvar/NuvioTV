@@ -736,7 +736,7 @@ private fun buildUpcomingHomeRow(sections: List<UpcomingSection>): CatalogRow? {
         type = ContentType.SERIES,
         rawType = UPCOMING_HOME_RAW_TYPE,
         items = items,
-        hasMore = true,
-        supportsSkip = true
+        hasMore = false,
+        supportsSkip = false
     )
 }
