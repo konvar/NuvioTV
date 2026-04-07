@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -136,11 +137,16 @@ private fun UpcomingAgendaCard(
 ) {
     val cardShape = RoundedCornerShape(22.dp)
     val context = LocalContext.current
+    val density = LocalDensity.current
     val imageUrl = item.poster ?: item.backdrop
-    val imageModel = remember(imageUrl) {
+    val requestWidthPx = remember(density) { with(density) { 240.dp.roundToPx() } }
+    val requestHeightPx = remember(density) { with(density) { 135.dp.roundToPx() } }
+    val imageModel = remember(imageUrl, requestWidthPx, requestHeightPx) {
         ImageRequest.Builder(context)
             .data(imageUrl)
             .crossfade(false)
+            .memoryCacheKey("${imageUrl}_${requestWidthPx}x${requestHeightPx}")
+            .size(width = requestWidthPx, height = requestHeightPx)
             .build()
     }
 

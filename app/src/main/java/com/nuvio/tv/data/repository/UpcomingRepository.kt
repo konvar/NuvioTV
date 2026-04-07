@@ -11,10 +11,12 @@ import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.repository.MetaRepository
 import com.nuvio.tv.domain.repository.WatchProgressRepository
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -94,7 +96,8 @@ class UpcomingRepositoryImpl @Inject constructor(
     private val traktApi: TraktApi,
     private val traktAuthService: TraktAuthService,
     private val watchProgressRepository: WatchProgressRepository,
-    private val metaRepository: MetaRepository
+    private val metaRepository: MetaRepository,
+    private val traktProgressService: TraktProgressService
 ) : UpcomingRepository {
 
     private val sectionsState = MutableStateFlow<List<UpcomingSection>?>(null)
@@ -102,13 +105,31 @@ class UpcomingRepositoryImpl @Inject constructor(
     private var lastRefreshMs: Long = 0L
 
     override fun observeSections(): Flow<List<UpcomingSection>> {
-        return sectionsState
-            .filterNotNull()
-            .onStart {
-            if (sectionsState.value == null) {
-                refreshNow(force = false)
+        return combine(
+            sectionsState.filterNotNull(),
+            traktProgressService.observeHiddenProgressEntries()
+                .map { entries -> entries.mapTo(mutableSetOf()) { canonicalLookupKey(it.id) } }
+        ) { sections, hiddenIds ->
+            if (hiddenIds.isEmpty()) {
+                sections
+            } else {
+                sections.mapNotNull { section ->
+                    val visibleItems = section.items.filter { entry ->
+                        canonicalLookupKey(entry.contentId) !in hiddenIds
+                    }
+                    if (visibleItems.isEmpty()) {
+                        null
+                    } else {
+                        section.copy(items = visibleItems)
+                    }
+                }
             }
         }
+            .onStart {
+                if (sectionsState.value == null) {
+                    refreshNow(force = false)
+                }
+            }
     }
 
     override suspend fun refreshNow(force: Boolean) {
