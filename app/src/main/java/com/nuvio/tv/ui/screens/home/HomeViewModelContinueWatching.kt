@@ -139,7 +139,8 @@ private data class NextUpTmdbData(
     val airDate: String?,
     val overview: String?,
     val showDescription: String?,
-    val rating: Double?
+    val rating: Double?,
+    val contentLanguage: String? = null
 )
 
 internal data class NextUpResolution(
@@ -309,7 +310,8 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                                     episodeDescription = cached?.episodeDescription,
                                     episodeImdbRating = cached?.episodeImdbRating,
                                     genres = cached?.genres ?: emptyList(),
-                                    releaseInfo = cached?.releaseInfo
+                                    releaseInfo = cached?.releaseInfo,
+                                    contentLanguage = cached?.contentLanguage
                                 )
                             )
                         }
@@ -441,7 +443,8 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                                                 backdrop = cached.backdrop ?: nextUp.info.backdrop,
                                                 poster = cached.poster ?: nextUp.info.poster,
                                                 logo = cached.logo ?: nextUp.info.logo,
-                                                name = cached.name.takeIf { it.isNotBlank() } ?: nextUp.info.name
+                                                name = cached.name.takeIf { it.isNotBlank() } ?: nextUp.info.name,
+                                                contentLanguage = cached.contentLanguage ?: nextUp.info.contentLanguage
                                             ))
                                         } else nextUp
                                     }
@@ -697,7 +700,8 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                                 episodeDescription = cached.episodeDescription ?: nextUp.info.episodeDescription,
                                 imdbRating = cached.imdbRating ?: nextUp.info.imdbRating,
                                 genres = cached.genres.ifEmpty { nextUp.info.genres },
-                                releaseInfo = cached.releaseInfo ?: nextUp.info.releaseInfo
+                                releaseInfo = cached.releaseInfo ?: nextUp.info.releaseInfo,
+                                contentLanguage = cached.contentLanguage ?: nextUp.info.contentLanguage
                             ))
                         } else nextUp
                     }
@@ -734,7 +738,7 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                             releaseInfo = info.releaseInfo, sortTimestamp = info.sortTimestamp,
                             releaseTimestamp = info.releaseTimestamp, isReleaseAlert = info.isReleaseAlert,
                             isNewSeasonRelease = info.isNewSeasonRelease, seedSeason = info.seedSeason,
-                            seedEpisode = info.seedEpisode
+                            seedEpisode = info.seedEpisode, contentLanguage = info.contentLanguage
                         )
                     }
                     val ipSnap = currentItems.mapNotNull { item ->
@@ -748,7 +752,8 @@ internal fun HomeViewModel.loadContinueWatchingPipeline() {
                             lastWatched = p.lastWatched, progressPercent = p.progressPercent,
                             episodeThumbnail = ip.episodeThumbnail?.takeIf { it !in brokenUrls },
                             episodeDescription = ip.episodeDescription, episodeImdbRating = ip.episodeImdbRating,
-                            genres = ip.genres, releaseInfo = ip.releaseInfo
+                            genres = ip.genres, releaseInfo = ip.releaseInfo,
+                            contentLanguage = ip.contentLanguage
                         )
                     }
                     runCatching { cwEnrichmentCache.saveNextUpSnapshot(nextUpSnap) }
@@ -1184,9 +1189,17 @@ internal fun mergeContinueWatchingItems(
     inProgressItems.forEach { combined.add(it.progress.lastWatched to it) }
     filteredNextUpItems.forEach { combined.add(it.info.sortTimestamp to it) }
 
+    val seen = mutableSetOf<String>()
     return combined
         .sortedByDescending { it.first }
         .map { it.second }
+        .filter { item ->
+            val contentId = when (item) {
+                is ContinueWatchingItem.InProgress -> item.progress.contentId
+                is ContinueWatchingItem.NextUp -> item.info.contentId
+            }
+            contentId.isBlank() || seen.add(contentId)
+        }
 }
 
 private suspend fun HomeViewModel.buildNextUpItem(
@@ -1312,7 +1325,8 @@ private suspend fun HomeViewModel.enrichInProgressItem(
         episodeThumbnail = if (settings.useEpisodes) tmdbData?.thumbnail ?: video?.thumbnail.normalizeImageUrl() ?: item.episodeThumbnail else video?.thumbnail.normalizeImageUrl() ?: item.episodeThumbnail,
         episodeImdbRating = if (settings.useBasicInfo) imdbRating else meta.imdbRating,
         genres = genres,
-        releaseInfo = releaseInfo
+        releaseInfo = releaseInfo,
+        contentLanguage = tmdbData?.contentLanguage ?: item.contentLanguage
     )
 }
 
@@ -1392,7 +1406,8 @@ private suspend fun HomeViewModel.enrichNextUpItem(
         sortTimestamp = item.info.sortTimestamp,
         releaseTimestamp = releaseState.releaseTimestamp,
         isReleaseAlert = releaseState.isReleaseAlert,
-        isNewSeasonRelease = releaseState.isNewSeasonRelease
+        isNewSeasonRelease = releaseState.isNewSeasonRelease,
+        contentLanguage = tmdbData?.contentLanguage ?: item.info.contentLanguage
     )
     if (shouldTraceNextUpSeries(progressSeed)) {
         logNextUpDecision(
@@ -1836,7 +1851,8 @@ private fun HomeViewModel.persistLocalContinueWatchingMetadata(
             isReleaseAlert = info.isReleaseAlert,
             isNewSeasonRelease = info.isNewSeasonRelease,
             seedSeason = info.seedSeason,
-            seedEpisode = info.seedEpisode
+            seedEpisode = info.seedEpisode,
+            contentLanguage = info.contentLanguage
         )
     }
 
@@ -1863,7 +1879,8 @@ private fun HomeViewModel.persistLocalContinueWatchingMetadata(
             episodeDescription = ip.episodeDescription,
             episodeImdbRating = ip.episodeImdbRating,
             genres = ip.genres,
-            releaseInfo = ip.releaseInfo
+            releaseInfo = ip.releaseInfo,
+            contentLanguage = ip.contentLanguage
         )
     }
 
@@ -2022,7 +2039,8 @@ private suspend fun HomeViewModel.resolveContinueWatchingTmdbData(
                 airDate = null,
                 overview = it.description?.trim()?.takeIf { t -> t.isNotEmpty() },
                 showDescription = null,
-                rating = mdbImdbRating ?: it.rating
+                rating = mdbImdbRating ?: it.rating,
+                contentLanguage = it.language
             )
         }
     }
@@ -2075,7 +2093,8 @@ private suspend fun HomeViewModel.resolveContinueWatchingTmdbData(
         airDate = episodeMeta?.airDate?.trim()?.takeIf { it.isNotEmpty() },
         overview = episodeMeta?.overview?.trim()?.takeIf { it.isNotEmpty() },
         showDescription = showMeta?.description?.trim()?.takeIf { it.isNotEmpty() },
-        rating = mdbImdbRating ?: showMeta?.rating
+        rating = mdbImdbRating ?: showMeta?.rating,
+        contentLanguage = showMeta?.language
     )
 
     return if (

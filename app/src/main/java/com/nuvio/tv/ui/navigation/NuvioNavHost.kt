@@ -147,7 +147,8 @@ fun NuvioNavHost(
                         // not detour through the detail screen for series.
                         returnToDetailOnBack = false,
                         returnToHomeOnBack = true,
-                        startFromBeginning = startFromBeginning
+                        startFromBeginning = startFromBeginning,
+                        contentLanguage = item.contentLanguage
                     )
                     is ContinueWatchingItem.NextUp -> Screen.Stream.createRoute(
                         videoId = item.info.videoId,
@@ -169,7 +170,8 @@ fun NuvioNavHost(
                         // not detour through the detail screen for series.
                         returnToDetailOnBack = false,
                         returnToHomeOnBack = true,
-                        startFromBeginning = startFromBeginning
+                        startFromBeginning = startFromBeginning,
+                        contentLanguage = item.info.contentLanguage
                     )
                 }
             }
@@ -296,7 +298,7 @@ fun NuvioNavHost(
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     navController.navigate(Screen.Detail.createRoute(itemId, itemType, addonBaseUrl))
                 },
-                onPlayClick = { videoId, contentType, contentId, title, poster, backdrop, logo, season, episode, episodeName, genres, year, runtime ->
+                onPlayClick = { videoId, contentType, contentId, title, poster, backdrop, logo, season, episode, episodeName, genres, year, runtime, contentLanguage ->
                     navController.navigate(
                         Screen.Stream.createRoute(
                             videoId = videoId,
@@ -313,11 +315,12 @@ fun NuvioNavHost(
                             contentId = contentId,
                             contentName = title,
                             runtime = runtime,
-                            returnToDetailOnBack = contentType.equals("series", ignoreCase = true)
+                            returnToDetailOnBack = contentType.equals("series", ignoreCase = true),
+                            contentLanguage = contentLanguage
                         )
                     )
                 },
-                onPlayManuallyClick = { videoId, contentType, contentId, title, poster, backdrop, logo, season, episode, episodeName, genres, year, runtime ->
+                onPlayManuallyClick = { videoId, contentType, contentId, title, poster, backdrop, logo, season, episode, episodeName, genres, year, runtime, contentLanguage ->
                     navController.navigate(
                         Screen.Stream.createRoute(
                             videoId = videoId,
@@ -335,7 +338,8 @@ fun NuvioNavHost(
                             contentName = title,
                             runtime = runtime,
                             manualSelection = true,
-                            returnToDetailOnBack = contentType.equals("series", ignoreCase = true)
+                            returnToDetailOnBack = contentType.equals("series", ignoreCase = true),
+                            contentLanguage = contentLanguage
                         )
                     )
                 }
@@ -422,6 +426,11 @@ fun NuvioNavHost(
                     type = NavType.StringType
                     nullable = true
                     defaultValue = "false"
+                },
+                navArgument("contentLanguage") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 }
             )
         ) { backStackEntry ->
@@ -495,7 +504,8 @@ fun NuvioNavHost(
                                 startFromBeginning = startFromBeginning,
                                 addonName = playbackInfo.addonName,
                                 addonLogo = playbackInfo.addonLogo,
-                                streamDescription = playbackInfo.streamDescription
+                                streamDescription = playbackInfo.streamDescription,
+                                contentLanguage = playbackInfo.contentLanguage
                             )
                         )
                     }
@@ -529,7 +539,8 @@ fun NuvioNavHost(
                                 startFromBeginning = startFromBeginning,
                                 addonName = playbackInfo.addonName,
                                 addonLogo = playbackInfo.addonLogo,
-                                streamDescription = playbackInfo.streamDescription
+                                streamDescription = playbackInfo.streamDescription,
+                                contentLanguage = playbackInfo.contentLanguage
                             )
                         ) {
                             popUpTo(Screen.Stream.route) { inclusive = true }
@@ -660,6 +671,11 @@ fun NuvioNavHost(
                     defaultValue = null
                 },
                 navArgument("streamDescription") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("contentLanguage") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null

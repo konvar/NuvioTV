@@ -489,6 +489,8 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
                         col.folders.forEach { folder ->
                             add(GridItem.CollectionFolder(
                                 collectionId = col.id,
+                                collectionTitle = col.title,
+                                focusGlowEnabled = col.focusGlowEnabled,
                                 folder = folder
                             ))
                         }
