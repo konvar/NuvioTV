@@ -6,6 +6,7 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.nuvio.tv.core.sync.StartupSyncService
+import com.nuvio.tv.tvhome.TvHomePublisher
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
@@ -14,9 +15,11 @@ import javax.inject.Inject
 class NuvioApplication : Application(), ImageLoaderFactory {
 
     @Inject lateinit var startupSyncService: StartupSyncService
+    @Inject lateinit var tvHomePublisher: TvHomePublisher
 
     override fun onCreate() {
         super.onCreate()
+        tvHomePublisher.start()
     }
 
     override fun newImageLoader(): ImageLoader {

@@ -330,6 +330,39 @@ fun LayoutSettingsContent(
                         )
                     }
                     CompactToggleRow(
+                        title = stringResource(R.string.layout_show_continue_watching_home),
+                        subtitle = stringResource(R.string.layout_show_continue_watching_home_sub),
+                        checked = uiState.showContinueWatchingOnHome,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetShowContinueWatchingOnHome(!uiState.showContinueWatchingOnHome)
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_show_upcoming_home),
+                        subtitle = stringResource(R.string.layout_show_upcoming_home_sub),
+                        checked = uiState.showUpcomingOnHome,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetShowUpcomingOnHome(!uiState.showUpcomingOnHome)
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_show_upcoming_sidebar),
+                        subtitle = stringResource(R.string.layout_show_upcoming_sidebar_sub),
+                        checked = uiState.showUpcomingInSidebar,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetShowUpcomingInSidebar(!uiState.showUpcomingInSidebar)
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
+                    )
+                    CompactToggleRow(
                         title = stringResource(R.string.layout_show_discover),
                         subtitle = stringResource(R.string.layout_show_discover_sub),
                         checked = uiState.searchDiscoverEnabled,

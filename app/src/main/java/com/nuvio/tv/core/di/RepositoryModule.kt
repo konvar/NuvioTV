@@ -7,6 +7,8 @@ import com.nuvio.tv.data.repository.MetaRepositoryImpl
 import com.nuvio.tv.data.repository.StreamRepositoryImpl
 import com.nuvio.tv.data.repository.SubtitleRepositoryImpl
 import com.nuvio.tv.data.repository.SyncRepositoryImpl
+import com.nuvio.tv.data.repository.UpcomingRepository
+import com.nuvio.tv.data.repository.UpcomingRepositoryImpl
 import com.nuvio.tv.data.repository.WatchProgressRepositoryImpl
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
@@ -53,6 +55,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSyncRepository(impl: SyncRepositoryImpl): SyncRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindUpcomingRepository(impl: UpcomingRepositoryImpl): UpcomingRepository
 
     @Binds
     @Singleton

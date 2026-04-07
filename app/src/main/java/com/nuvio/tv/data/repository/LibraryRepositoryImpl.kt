@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -36,6 +37,7 @@ class LibraryRepositoryImpl @Inject constructor(
     private val libraryPreferences: LibraryPreferences,
     private val traktAuthDataStore: TraktAuthDataStore,
     private val traktLibraryService: TraktLibraryService,
+    private val traktProgressService: TraktProgressService,
     private val librarySyncService: LibrarySyncService,
     private val authManager: AuthManager
 ) : LibraryRepository {
@@ -78,7 +80,12 @@ class LibraryRepositoryImpl @Inject constructor(
     override val libraryItems: Flow<List<LibraryEntry>> = sourceMode
         .flatMapLatest { mode ->
             if (mode == LibrarySourceMode.TRAKT) {
-                traktLibraryService.observeAllItems()
+                combine(
+                    traktLibraryService.observeAllItems(),
+                    traktProgressService.observeHiddenProgressEntries()
+                ) { libraryItems, hiddenItems ->
+                    mergeTraktEntries(libraryItems, hiddenItems)
+                }
             } else {
                 libraryPreferences.libraryItems.map { items ->
                     items.map { saved ->
@@ -106,7 +113,20 @@ class LibraryRepositoryImpl @Inject constructor(
     override val listTabs: Flow<List<LibraryListTab>> = sourceMode
         .flatMapLatest { mode ->
             if (mode == LibrarySourceMode.TRAKT) {
-                traktLibraryService.observeListTabs()
+                combine(
+                    traktLibraryService.observeListTabs(),
+                    traktProgressService.observeHiddenProgressEntries()
+                ) { tabs, hiddenItems ->
+                    if (hiddenItems.isEmpty()) {
+                        tabs
+                    } else {
+                        tabs + LibraryListTab(
+                            key = HIDDEN_PROGRESS_KEY,
+                            title = "Hidden",
+                            type = LibraryListTab.Type.HIDDEN_PROGRESS
+                        )
+                    }
+                }
             } else {
                 flowOf(emptyList())
             }
@@ -135,6 +155,16 @@ class LibraryRepositoryImpl @Inject constructor(
         }.distinctUntilChanged()
     }
 
+    override fun isInFavorites(itemId: String, itemType: String): Flow<Boolean> {
+        return sourceMode.flatMapLatest { mode ->
+            if (mode == LibrarySourceMode.TRAKT) {
+                traktLibraryService.observeFavoriteMembership(itemId, itemType)
+            } else {
+                flowOf(false)
+            }
+        }.distinctUntilChanged()
+    }
+
     override suspend fun toggleDefault(item: LibraryEntryInput) {
         if (traktAuthDataStore.isEffectivelyAuthenticated.first()) {
             traktLibraryService.toggleWatchlist(item)
@@ -148,6 +178,11 @@ class LibraryRepositoryImpl @Inject constructor(
             libraryPreferences.addItem(item.toSavedLibraryItem())
         }
         triggerRemoteSync()
+    }
+
+    override suspend fun toggleFavorite(item: LibraryEntryInput) {
+        requireTraktAuth()
+        traktLibraryService.toggleFavorite(item)
     }
 
     override suspend fun getMembershipSnapshot(item: LibraryEntryInput): ListMembershipSnapshot {
@@ -231,7 +266,37 @@ class LibraryRepositoryImpl @Inject constructor(
         )
     }
 
+    private fun mergeTraktEntries(
+        libraryItems: List<LibraryEntry>,
+        hiddenItems: List<LibraryEntry>
+    ): List<LibraryEntry> {
+        val merged = linkedMapOf<String, LibraryEntry>()
+        (libraryItems + hiddenItems)
+            .sortedByDescending { it.listedAt }
+            .forEach { entry ->
+                val key = "${entry.type.lowercase()}:${entry.id}"
+                val existing = merged[key]
+                merged[key] = if (existing == null) {
+                    entry
+                } else {
+                    existing.copy(
+                        listKeys = existing.listKeys + entry.listKeys,
+                        poster = existing.poster ?: entry.poster,
+                        background = existing.background ?: entry.background,
+                        logo = existing.logo ?: entry.logo,
+                        description = existing.description ?: entry.description,
+                        releaseInfo = existing.releaseInfo ?: entry.releaseInfo,
+                        imdbRating = existing.imdbRating ?: entry.imdbRating,
+                        genres = if (existing.genres.isEmpty()) entry.genres else existing.genres,
+                        listedAt = maxOf(existing.listedAt, entry.listedAt)
+                    )
+                }
+            }
+        return merged.values.toList()
+    }
+
     companion object {
         private const val LOCAL_LIST_KEY = "local"
+        private const val HIDDEN_PROGRESS_KEY = "hidden_progress"
     }
 }

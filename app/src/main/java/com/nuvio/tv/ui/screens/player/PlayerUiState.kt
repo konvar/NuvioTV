@@ -199,6 +199,7 @@ sealed class PlayerEvent {
     data object OnRequestExitPlayer : PlayerEvent()
     data class OnSelectTraktRating(val rating: Int) : PlayerEvent()
     data class OnSubmitTraktRating(val rating: Int? = null) : PlayerEvent()
+    data object OnRemoveTraktRating : PlayerEvent()
     data object OnDismissTraktRatingDialog : PlayerEvent()
     data object OnShowEpisodesPanel : PlayerEvent()
     data object OnDismissEpisodesPanel : PlayerEvent()

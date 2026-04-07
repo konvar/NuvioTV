@@ -2,6 +2,7 @@ package com.nuvio.tv.ui.screens.home
 
 import androidx.compose.runtime.Immutable
 import com.nuvio.tv.data.local.StartupAuthNotice
+import com.nuvio.tv.data.repository.UpcomingSection
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.Collection
 import com.nuvio.tv.domain.model.FocusedPosterTrailerPlaybackTarget
@@ -53,8 +54,11 @@ data class HomeUiState(
     val hideUnreleasedContent: Boolean = false,
     val showFullReleaseDate: Boolean = true,
     val blurUnwatchedEpisodes: Boolean = false,
+    val showContinueWatchingOnHome: Boolean = true,
+    val showUpcomingOnHome: Boolean = true,
     val startupAuthNotice: StartupAuthNotice? = null,
-    val homeRows: List<HomeRow> = emptyList()
+    val homeRows: List<HomeRow> = emptyList(),
+    val upcomingSections: List<UpcomingSection> = emptyList()
 )
 
 @Immutable

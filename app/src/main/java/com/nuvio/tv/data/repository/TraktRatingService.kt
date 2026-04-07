@@ -9,6 +9,9 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktRatedMovieItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRatingEpisodeRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRatingMovieRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsAddRequestDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsRemoveEpisodeRequestDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsRemoveMovieRequestDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsRemoveRequestDto
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -105,6 +108,27 @@ class TraktRatingService @Inject constructor(
         }
     }
 
+    suspend fun removeRating(item: TraktRatingItem): Result<Unit> {
+        if (!canPromptForRating(item)) {
+            return Result.failure(IllegalStateException("Trakt rating is unavailable"))
+        }
+
+        val response = traktAuthService.executeAuthorizedWriteRequest { authHeader ->
+            traktApi.removeRatings(
+                authorization = authHeader,
+                body = buildRemoveRequestBody(item)
+            )
+        } ?: return Result.failure(IllegalStateException("Unable to reach Trakt"))
+
+        return if (response.isSuccessful) {
+            Result.success(Unit)
+        } else {
+            Result.failure(
+                IllegalStateException("Failed to remove Trakt rating (${response.code()})")
+            )
+        }
+    }
+
     internal fun buildRequestBody(item: TraktRatingItem, rating: Int): TraktRatingsAddRequestDto {
         val normalizedRating = rating.coerceIn(1, 10)
         return when (item) {
@@ -123,6 +147,22 @@ class TraktRatingService @Inject constructor(
                         rating = normalizedRating,
                         ids = item.ids
                     )
+                )
+            )
+        }
+    }
+
+    internal fun buildRemoveRequestBody(item: TraktRatingItem): TraktRatingsRemoveRequestDto {
+        return when (item) {
+            is TraktRatingItem.Movie -> TraktRatingsRemoveRequestDto(
+                movies = listOf(
+                    TraktRatingsRemoveMovieRequestDto(ids = item.ids)
+                )
+            )
+
+            is TraktRatingItem.Episode -> TraktRatingsRemoveRequestDto(
+                episodes = listOf(
+                    TraktRatingsRemoveEpisodeRequestDto(ids = item.ids)
                 )
             )
         }

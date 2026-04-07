@@ -4,10 +4,15 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.R
 import com.nuvio.tv.core.network.NetworkResult
+import com.nuvio.tv.data.repository.UPCOMING_HOME_ADDON_ID
+import com.nuvio.tv.data.repository.UPCOMING_HOME_CATALOG_ID
+import com.nuvio.tv.data.repository.UPCOMING_HOME_RAW_TYPE
+import com.nuvio.tv.data.repository.UpcomingSection
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.CatalogDescriptor
 import com.nuvio.tv.domain.model.CatalogRow
 import com.nuvio.tv.domain.model.Collection
+import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.HomeLayout
 import com.nuvio.tv.domain.model.skipStep
 import com.nuvio.tv.domain.model.supportsExtra
@@ -397,8 +402,16 @@ internal suspend fun HomeViewModel.updateCatalogRowsPipeline() {
     }
 
     heroItemOrder = baseHeroItems.map { it.id }
+    val upcomingRow = if (_uiState.value.showUpcomingOnHome) {
+        buildUpcomingHomeRow(_uiState.value.upcomingSections)
+    } else {
+        null
+    }
 
     val computedHomeRows = buildList {
+        if (upcomingRow != null) {
+            add(HomeRow.Catalog(upcomingRow))
+        }
         collectionsCache.forEach { collection ->
             val key = "collection_${collection.id}"
             if (collection.pinToTop && key !in disabledHomeCatalogKeys) {
@@ -703,4 +716,25 @@ internal fun HomeViewModel.reconcilePosterStatusObserversPipeline(rows: List<Cat
             )
         }
     }
+}
+
+private fun buildUpcomingHomeRow(sections: List<UpcomingSection>): CatalogRow? {
+    val items = sections
+        .flatMap { it.items }
+        .take(18)
+        .map { it.toMetaPreview() }
+    if (items.isEmpty()) return null
+
+    return CatalogRow(
+        addonId = UPCOMING_HOME_ADDON_ID,
+        addonName = "Trakt",
+        addonBaseUrl = "",
+        catalogId = UPCOMING_HOME_CATALOG_ID,
+        catalogName = "Upcoming",
+        type = ContentType.SERIES,
+        rawType = UPCOMING_HOME_RAW_TYPE,
+        items = items,
+        hasMore = true,
+        supportsSkip = true
+    )
 }

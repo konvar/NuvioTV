@@ -16,6 +16,7 @@ import com.nuvio.tv.data.local.TmdbSettingsDataStore
 import com.nuvio.tv.data.repository.ImdbEpisodeRatingsRepository
 import com.nuvio.tv.data.repository.MDBListRepository
 import com.nuvio.tv.data.repository.TraktCommentsService
+import com.nuvio.tv.data.repository.TraktProgressService
 import com.nuvio.tv.data.repository.TraktRelatedService
 import com.nuvio.tv.data.repository.parseContentIds
 import com.nuvio.tv.domain.model.ContentType
@@ -51,6 +52,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -77,6 +79,7 @@ class MetaDetailsViewModel @Inject constructor(
     private val trailerSettingsDataStore: TrailerSettingsDataStore,
     private val traktAuthDataStore: TraktAuthDataStore,
     private val traktCommentsService: TraktCommentsService,
+    private val traktProgressService: TraktProgressService,
     private val traktRelatedService: TraktRelatedService,
     private val traktSettingsDataStore: TraktSettingsDataStore,
     private val layoutPreferenceDataStore: LayoutPreferenceDataStore,
@@ -281,6 +284,8 @@ class MetaDetailsViewModel @Inject constructor(
             MetaDetailsEvent.OnTrailerButtonClick -> handleTrailerButtonClick()
             MetaDetailsEvent.OnTrailerEnded -> handleTrailerEnded()
             MetaDetailsEvent.OnToggleMovieWatched -> toggleMovieWatched()
+            MetaDetailsEvent.OnToggleFavorite -> toggleFavorite()
+            MetaDetailsEvent.OnToggleHiddenProgress -> toggleHiddenProgress()
             is MetaDetailsEvent.OnToggleEpisodeWatched -> toggleEpisodeWatched(event.video)
             is MetaDetailsEvent.OnMarkSeasonWatched -> markSeasonWatched(event.season)
             is MetaDetailsEvent.OnMarkSeasonUnwatched -> markSeasonUnwatched(event.season)
@@ -295,6 +300,13 @@ class MetaDetailsViewModel @Inject constructor(
     }
 
     private fun observeLibraryState() {
+        val itemIdentityFlow = combine(
+            _effectiveContentId,
+            _uiState.map { it.meta?.apiType ?: itemType }
+        ) { contentId, resolvedType ->
+            contentId to resolvedType
+        }.distinctUntilChanged()
+
         viewModelScope.launch {
             libraryRepository.sourceMode
                 .distinctUntilChanged()
@@ -335,7 +347,9 @@ class MetaDetailsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            libraryRepository.isInLibrary(itemId = itemId, itemType = itemType)
+            itemIdentityFlow.flatMapLatest { (contentId, contentType) ->
+                libraryRepository.isInLibrary(itemId = contentId, itemType = contentType)
+            }
                 .distinctUntilChanged()
                 .collectLatest { inLibrary ->
                     _uiState.update { state ->
@@ -345,11 +359,41 @@ class MetaDetailsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            libraryRepository.isInWatchlist(itemId = itemId, itemType = itemType)
+            itemIdentityFlow.flatMapLatest { (contentId, contentType) ->
+                libraryRepository.isInWatchlist(itemId = contentId, itemType = contentType)
+            }
                 .distinctUntilChanged()
                 .collectLatest { inWatchlist ->
                     _uiState.update { state ->
                         if (state.isInWatchlist == inWatchlist) state else state.copy(isInWatchlist = inWatchlist)
+                    }
+                }
+        }
+
+        viewModelScope.launch {
+            itemIdentityFlow.flatMapLatest { (contentId, contentType) ->
+                libraryRepository.isInFavorites(itemId = contentId, itemType = contentType)
+            }
+                .distinctUntilChanged()
+                .collectLatest { inFavorites ->
+                    _uiState.update { state ->
+                        if (state.isInFavorites == inFavorites) state else state.copy(isInFavorites = inFavorites)
+                    }
+                }
+        }
+
+        viewModelScope.launch {
+            itemIdentityFlow.flatMapLatest { (contentId, contentType) ->
+                if (contentType.equals("movie", ignoreCase = true)) {
+                    flowOf(false)
+                } else {
+                    traktProgressService.observeHiddenProgressMembership(contentId)
+                }
+            }
+                .distinctUntilChanged()
+                .collectLatest { hidden ->
+                    _uiState.update { state ->
+                        if (state.isHiddenFromProgress == hidden) state else state.copy(isHiddenFromProgress = hidden)
                     }
                 }
         }
@@ -1467,6 +1511,55 @@ class MetaDetailsViewModel @Inject constructor(
                     isError = true
                 )
             }
+        }
+    }
+
+    private fun toggleFavorite() {
+        if (_uiState.value.librarySourceMode != LibrarySourceMode.TRAKT) return
+        if (_uiState.value.isFavoritePending) return
+        val meta = _uiState.value.meta ?: return
+
+        viewModelScope.launch {
+            val wasFavorite = _uiState.value.isInFavorites
+            _uiState.update { it.copy(isFavoritePending = true) }
+            runCatching {
+                libraryRepository.toggleFavorite(meta.toLibraryEntryInput())
+                showMessage(
+                    if (wasFavorite) {
+                        context.getString(R.string.detail_removed_from_favorites)
+                    } else {
+                        context.getString(R.string.detail_added_to_favorites)
+                    }
+                )
+            }.onFailure { error ->
+                showMessage(error.message ?: "Failed to update favorites", isError = true)
+            }
+            _uiState.update { it.copy(isFavoritePending = false) }
+        }
+    }
+
+    private fun toggleHiddenProgress() {
+        if (_uiState.value.librarySourceMode != LibrarySourceMode.TRAKT) return
+        if (_uiState.value.isHiddenFromProgressPending) return
+        val meta = _uiState.value.meta ?: return
+        if (meta.apiType.equals("movie", ignoreCase = true)) return
+
+        viewModelScope.launch {
+            val wasHidden = _uiState.value.isHiddenFromProgress
+            _uiState.update { it.copy(isHiddenFromProgressPending = true) }
+            runCatching {
+                val item = meta.toLibraryEntryInput()
+                if (wasHidden) {
+                    traktProgressService.unhideShowFromProgress(item)
+                    showMessage(context.getString(R.string.detail_restored_to_continue_watching))
+                } else {
+                    traktProgressService.hideShowFromProgress(item)
+                    showMessage(context.getString(R.string.detail_hidden_from_continue_watching))
+                }
+            }.onFailure { error ->
+                showMessage(error.message ?: "Failed to update Continue Watching visibility", isError = true)
+            }
+            _uiState.update { it.copy(isHiddenFromProgressPending = false) }
         }
     }
 

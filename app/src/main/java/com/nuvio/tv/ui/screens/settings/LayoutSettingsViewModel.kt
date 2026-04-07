@@ -45,7 +45,10 @@ data class LayoutSettingsUiState(
     val detailPageTrailerButtonEnabled: Boolean = false,
     val preferExternalMetaAddonDetail: Boolean = false,
     val hideUnreleasedContent: Boolean = false,
-    val showFullReleaseDate: Boolean = true
+    val showFullReleaseDate: Boolean = true,
+    val showContinueWatchingOnHome: Boolean = true,
+    val showUpcomingOnHome: Boolean = true,
+    val showUpcomingInSidebar: Boolean = true
 )
 
 data class CatalogInfo(
@@ -82,6 +85,9 @@ sealed class LayoutSettingsEvent {
     data class SetPreferExternalMetaAddonDetail(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetHideUnreleasedContent(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetShowFullReleaseDate(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetShowContinueWatchingOnHome(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetShowUpcomingOnHome(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetShowUpcomingInSidebar(val enabled: Boolean) : LayoutSettingsEvent()
     data object ResetPosterCardStyle : LayoutSettingsEvent()
 }
 
@@ -240,6 +246,21 @@ class LayoutSettingsViewModel @Inject constructor(
                 updateUiStateIfChanged { it.copy(showFullReleaseDate = enabled) }
             }
         }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.showContinueWatchingOnHome.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(showContinueWatchingOnHome = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.showUpcomingOnHome.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(showUpcomingOnHome = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.showUpcomingInSidebar.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(showUpcomingInSidebar = enabled) }
+            }
+        }
         loadAvailableCatalogs()
     }
 
@@ -271,6 +292,9 @@ class LayoutSettingsViewModel @Inject constructor(
             is LayoutSettingsEvent.SetPreferExternalMetaAddonDetail -> setPreferExternalMetaAddonDetail(event.enabled)
             is LayoutSettingsEvent.SetHideUnreleasedContent -> setHideUnreleasedContent(event.enabled)
             is LayoutSettingsEvent.SetShowFullReleaseDate -> setShowFullReleaseDate(event.enabled)
+            is LayoutSettingsEvent.SetShowContinueWatchingOnHome -> setShowContinueWatchingOnHome(event.enabled)
+            is LayoutSettingsEvent.SetShowUpcomingOnHome -> setShowUpcomingOnHome(event.enabled)
+            is LayoutSettingsEvent.SetShowUpcomingInSidebar -> setShowUpcomingInSidebar(event.enabled)
             LayoutSettingsEvent.ResetPosterCardStyle -> resetPosterCardStyle()
         }
     }
@@ -454,6 +478,27 @@ class LayoutSettingsViewModel @Inject constructor(
         if (_uiState.value.showFullReleaseDate == enabled) return
         viewModelScope.launch {
             layoutPreferenceDataStore.setShowFullReleaseDate(enabled)
+        }
+    }
+
+    private fun setShowContinueWatchingOnHome(enabled: Boolean) {
+        if (_uiState.value.showContinueWatchingOnHome == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setShowContinueWatchingOnHome(enabled)
+        }
+    }
+
+    private fun setShowUpcomingOnHome(enabled: Boolean) {
+        if (_uiState.value.showUpcomingOnHome == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setShowUpcomingOnHome(enabled)
+        }
+    }
+
+    private fun setShowUpcomingInSidebar(enabled: Boolean) {
+        if (_uiState.value.showUpcomingInSidebar == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setShowUpcomingInSidebar(enabled)
         }
     }
 

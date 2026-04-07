@@ -2,7 +2,9 @@ package com.nuvio.tv
 
 import android.os.Bundle
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.core.os.ConfigurationCompat
 import android.util.Log
 import androidx.compose.ui.platform.LocalView
@@ -49,6 +51,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
@@ -104,11 +107,13 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import androidx.tv.material3.rememberDrawerState
+import androidx.tvprovider.media.tv.TvContractCompat
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.data.local.AppOnboardingDataStore
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.ThemeDataStore
+import com.nuvio.tv.data.repository.UpcomingRepository
 import com.nuvio.tv.data.repository.TraktProgressService
 import com.nuvio.tv.domain.model.AppFont
 import com.nuvio.tv.domain.model.AppTheme
@@ -127,6 +132,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.updater.UpdateViewModel
 import com.nuvio.tv.updater.ui.UpdatePromptDialog
+import com.nuvio.tv.tvhome.TvHomeStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
@@ -157,7 +163,8 @@ private data class MainUiPrefs(
     val hasChosenLayout: Boolean? = null,
     val sidebarCollapsed: Boolean = false,
     val modernSidebarEnabled: Boolean = false,
-    val modernSidebarBlurPref: Boolean = false
+    val modernSidebarBlurPref: Boolean = false,
+    val showUpcomingInSidebar: Boolean = true
 )
 
 @AndroidEntryPoint
@@ -193,7 +200,14 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var avatarRepository: AvatarRepository
 
+    @Inject
+    lateinit var upcomingRepository: UpcomingRepository
+
+    @Inject
+    lateinit var tvHomeStateStore: TvHomeStateStore
+
     private lateinit var jankStats: JankStats
+    private var pendingDeepLinkUri by mutableStateOf<Uri?>(null)
 
     @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
     override fun attachBaseContext(newBase: Context) {
@@ -217,6 +231,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        pendingDeepLinkUri = intent?.data
         window?.setBackgroundDrawable(null)
         setContent {
             var hasSelectedProfileThisSession by rememberSaveable { mutableStateOf(false) }
@@ -268,19 +283,24 @@ class MainActivity : ComponentActivity() {
 
             val mainUiPrefsFlow = remember(themeDataStore, layoutPreferenceDataStore) {
                 combine(
-                    themeDataStore.selectedTheme,
-                    themeDataStore.selectedFont,
-                    layoutPreferenceDataStore.hasChosenLayout,
-                    layoutPreferenceDataStore.sidebarCollapsedByDefault,
-                    layoutPreferenceDataStore.modernSidebarEnabled,
-                ) { theme, font, hasChosenLayout, sidebarCollapsed, modernSidebarEnabled ->
-                    MainUiPrefs(
-                        theme = theme,
-                        font = font,
-                        hasChosenLayout = hasChosenLayout,
-                        sidebarCollapsed = sidebarCollapsed,
-                        modernSidebarEnabled = modernSidebarEnabled,
-                    )
+                    combine(
+                        themeDataStore.selectedTheme,
+                        themeDataStore.selectedFont,
+                        layoutPreferenceDataStore.hasChosenLayout,
+                        layoutPreferenceDataStore.sidebarCollapsedByDefault,
+                        layoutPreferenceDataStore.modernSidebarEnabled
+                    ) { theme, font, hasChosenLayout, sidebarCollapsed, modernSidebarEnabled ->
+                        MainUiPrefs(
+                            theme = theme,
+                            font = font,
+                            hasChosenLayout = hasChosenLayout,
+                            sidebarCollapsed = sidebarCollapsed,
+                            modernSidebarEnabled = modernSidebarEnabled
+                        )
+                    },
+                    layoutPreferenceDataStore.showUpcomingInSidebar
+                ) { prefs, showUpcomingInSidebar ->
+                    prefs.copy(showUpcomingInSidebar = showUpcomingInSidebar)
                 }.combine(layoutPreferenceDataStore.modernSidebarBlurEnabled) { prefs, modernSidebarBlurPref ->
                     prefs.copy(modernSidebarBlurPref = modernSidebarBlurPref)
                 }
@@ -381,6 +401,7 @@ class MainActivity : ComponentActivity() {
                     val modernSidebarEnabled = mainUiPrefs.modernSidebarEnabled
                     val modernSidebarBlurEnabled =
                         mainUiPrefs.modernSidebarBlurPref && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                    val showUpcomingInSidebar = mainUiPrefs.showUpcomingInSidebar
                     val hideBuiltInHeadersForFloatingPill = modernSidebarEnabled && !sidebarCollapsed
 
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
@@ -391,6 +412,19 @@ class MainActivity : ComponentActivity() {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
 
+                    LaunchedEffect(navController, currentRoute, pendingDeepLinkUri) {
+                        val deepLinkUri = pendingDeepLinkUri ?: return@LaunchedEffect
+                        if (handleAppDeepLink(navController, currentRoute, deepLinkUri)) {
+                            pendingDeepLinkUri = null
+                        }
+                    }
+
+                    LaunchedEffect(currentRoute, showUpcomingInSidebar, navController) {
+                        if (!showUpcomingInSidebar && currentRoute == Screen.Upcoming.route) {
+                            navigateToDrawerRoute(navController, currentRoute, Screen.Home.route)
+                        }
+                    }
+
                     val view = LocalView.current
                     LaunchedEffect(currentRoute) {
                         val holder = PerformanceMetricsState.getHolderForHierarchy(view)
@@ -399,55 +433,81 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val rootRoutes = remember {
-                        setOf(
+                    val rootRoutes = remember(showUpcomingInSidebar) {
+                        mutableSetOf(
                             Screen.Home.route,
                             Screen.Search.route,
                             Screen.Library.route,
                             Screen.Settings.route,
                             Screen.AddonManager.route
-                        )
+                        ).apply {
+                            if (showUpcomingInSidebar) {
+                                add(Screen.Upcoming.route)
+                            }
+                        }.toSet()
                     }
 
                     val strNavHome = stringResource(R.string.nav_home)
+                    val strNavUpcoming = stringResource(R.string.nav_upcoming)
                     val strNavSearch = stringResource(R.string.nav_search)
                     val strNavLibrary = stringResource(R.string.nav_library)
                     val strNavAddons = stringResource(R.string.nav_addons)
                     val strNavSettings = stringResource(R.string.nav_settings)
                     val drawerItems = remember(
                         strNavHome,
+                        strNavUpcoming,
                         strNavSearch,
                         strNavLibrary,
                         strNavAddons,
-                        strNavSettings
+                        strNavSettings,
+                        showUpcomingInSidebar
                     ) {
-                        listOf(
-                            DrawerItem(
-                                route = Screen.Home.route,
-                                label = strNavHome,
-                                icon = Icons.Default.Home
-                            ),
-                            DrawerItem(
-                                route = Screen.Search.route,
-                                label = strNavSearch,
-                                iconRes = R.raw.sidebar_search
-                            ),
-                            DrawerItem(
-                                route = Screen.Library.route,
-                                label = strNavLibrary,
-                                iconRes = R.raw.sidebar_library
-                            ),
-                            DrawerItem(
-                                route = Screen.AddonManager.route,
-                                label = strNavAddons,
-                                iconRes = R.raw.sidebar_plugin
-                            ),
-                            DrawerItem(
-                                route = Screen.Settings.route,
-                                label = strNavSettings,
-                                iconRes = R.raw.sidebar_settings
+                        buildList {
+                            add(
+                                DrawerItem(
+                                    route = Screen.Home.route,
+                                    label = strNavHome,
+                                    icon = Icons.Default.Home
+                                )
                             )
-                        )
+                            if (showUpcomingInSidebar) {
+                                add(
+                                    DrawerItem(
+                                        route = Screen.Upcoming.route,
+                                        label = strNavUpcoming,
+                                        icon = Icons.Default.Event
+                                    )
+                                )
+                            }
+                            add(
+                                DrawerItem(
+                                    route = Screen.Search.route,
+                                    label = strNavSearch,
+                                    iconRes = R.raw.sidebar_search
+                                )
+                            )
+                            add(
+                                DrawerItem(
+                                    route = Screen.Library.route,
+                                    label = strNavLibrary,
+                                    iconRes = R.raw.sidebar_library
+                                )
+                            )
+                            add(
+                                DrawerItem(
+                                    route = Screen.AddonManager.route,
+                                    label = strNavAddons,
+                                    iconRes = R.raw.sidebar_plugin
+                                )
+                            )
+                            add(
+                                DrawerItem(
+                                    route = Screen.Settings.route,
+                                    label = strNavSettings,
+                                    iconRes = R.raw.sidebar_settings
+                                )
+                            )
+                        }
                     }
                     val selectedDrawerRoute = drawerItems.firstOrNull { item ->
                         currentRoute == item.route || currentRoute?.startsWith("${item.route}/") == true
@@ -508,9 +568,8 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
-            }
         }
-
+        }
         jankStats = JankStats.createAndTrack(window) { frameData ->
             if (frameData.isJank) {
                 Log.w(
@@ -521,12 +580,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDeepLinkUri = intent.data
+    }
+
     override fun onResume() {
         super.onResume()
         if (::jankStats.isInitialized) jankStats.isTrackingEnabled = true
         startupSyncService.requestSyncNow(includeProfileSettings = false)
         lifecycleScope.launch {
             traktProgressService.refreshNow()
+        }
+        lifecycleScope.launch {
+            runCatching { upcomingRepository.refreshNow(force = false) }
         }
     }
 
@@ -537,7 +605,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        requestPendingBrowsableChannel()
         profileSettingsSyncService.requestForegroundPull()
+    }
+
+    private fun requestPendingBrowsableChannel() {
+        val channelId = tvHomeStateStore.consumePendingBrowsableChannelId() ?: return
+        runCatching {
+            startActivity(
+                Intent(TvContractCompat.ACTION_REQUEST_CHANNEL_BROWSABLE).apply {
+                    putExtra(TvContractCompat.EXTRA_CHANNEL_ID, channelId)
+                }
+            )
+        }.onFailure {
+            Log.w("MainActivity", "Failed to request browsable channel $channelId: ${it.message}")
+        }
     }
 }
 
@@ -1360,6 +1442,57 @@ private fun navigateToDrawerRoute(
         }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+private fun handleAppDeepLink(
+    navController: NavHostController,
+    currentRoute: String?,
+    uri: Uri
+): Boolean {
+    val destination = uri.host?.takeIf { it.isNotBlank() }
+        ?: uri.pathSegments.firstOrNull()
+        ?: return false
+
+    return when (destination.lowercase()) {
+        "home" -> {
+            navigateToDrawerRoute(navController, currentRoute, Screen.Home.route)
+            true
+        }
+        "upcoming" -> {
+            navigateToDrawerRoute(navController, currentRoute, Screen.Upcoming.route)
+            true
+        }
+        "search" -> {
+            navigateToDrawerRoute(navController, currentRoute, Screen.Search.route)
+            true
+        }
+        "library" -> {
+            navigateToDrawerRoute(navController, currentRoute, Screen.Library.route)
+            true
+        }
+        "settings" -> {
+            navigateToDrawerRoute(navController, currentRoute, Screen.Settings.route)
+            true
+        }
+        "detail" -> {
+            val itemId = uri.getQueryParameter("itemId").orEmpty()
+            val itemType = uri.getQueryParameter("itemType").orEmpty()
+            if (itemId.isBlank() || itemType.isBlank()) {
+                return false
+            }
+            navController.navigate(
+                Screen.Detail.createRoute(
+                    itemId = itemId,
+                    itemType = itemType,
+                    addonBaseUrl = uri.getQueryParameter("addonBaseUrl")
+                )
+            ) {
+                launchSingleTop = true
+            }
+            true
+        }
+        else -> false
     }
 }
 

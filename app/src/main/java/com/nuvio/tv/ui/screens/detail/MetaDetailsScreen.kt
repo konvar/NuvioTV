@@ -410,6 +410,10 @@ fun MetaDetailsScreen(
                     episodesForSeason = uiState.episodesForSeason,
                     isInLibrary = uiState.isInLibrary,
                     librarySourceMode = uiState.librarySourceMode,
+                    isInFavorites = uiState.isInFavorites,
+                    isFavoritePending = uiState.isFavoritePending,
+                    isHiddenFromProgress = uiState.isHiddenFromProgress,
+                    isHiddenFromProgressPending = uiState.isHiddenFromProgressPending,
                     nextToWatch = uiState.nextToWatch,
                     episodeProgressMap = uiState.episodeProgressMap,
                     watchedEpisodes = uiState.watchedEpisodes,
@@ -508,6 +512,8 @@ fun MetaDetailsScreen(
                     onPlayButtonFocused = { viewModel.onEvent(MetaDetailsEvent.OnPlayButtonFocused) },
                     onToggleLibrary = { viewModel.onEvent(MetaDetailsEvent.OnToggleLibrary) },
                     onLibraryLongPress = { viewModel.onEvent(MetaDetailsEvent.OnLibraryLongPress) },
+                    onToggleFavorite = { viewModel.onEvent(MetaDetailsEvent.OnToggleFavorite) },
+                    onToggleHiddenProgress = { viewModel.onEvent(MetaDetailsEvent.OnToggleHiddenProgress) },
                     onToggleMovieWatched = { viewModel.onEvent(MetaDetailsEvent.OnToggleMovieWatched) },
                     onToggleEpisodeWatched = { video ->
                         viewModel.onEvent(MetaDetailsEvent.OnToggleEpisodeWatched(video))
@@ -674,6 +680,10 @@ private fun MetaDetailsContent(
     episodesForSeason: List<Video>,
     isInLibrary: Boolean,
     librarySourceMode: LibrarySourceMode,
+    isInFavorites: Boolean,
+    isFavoritePending: Boolean,
+    isHiddenFromProgress: Boolean,
+    isHiddenFromProgressPending: Boolean,
     nextToWatch: NextToWatch?,
     episodeProgressMap: Map<Pair<Int, Int>, WatchProgress>,
     watchedEpisodes: Set<Pair<Int, Int>>,
@@ -708,6 +718,8 @@ private fun MetaDetailsContent(
     onPlayButtonFocused: () -> Unit,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onToggleHiddenProgress: () -> Unit,
     onToggleMovieWatched: () -> Unit,
     onToggleEpisodeWatched: (Video) -> Unit,
     onMarkSeasonWatched: (Int) -> Unit,
@@ -1359,6 +1371,14 @@ private fun MetaDetailsContent(
                                 onLibraryLongPress()
                             }
                         },
+                        isInFavorites = isInFavorites,
+                        onToggleFavorite = onToggleFavorite,
+                        favoriteEnabled = librarySourceMode == LibrarySourceMode.TRAKT && !isFavoritePending,
+                        isHiddenFromProgress = isHiddenFromProgress,
+                        onToggleHiddenProgress = onToggleHiddenProgress,
+                        hideFromProgressEnabled = librarySourceMode == LibrarySourceMode.TRAKT &&
+                            !meta.apiType.equals("movie", ignoreCase = true) &&
+                            !isHiddenFromProgressPending,
                         isMovieWatched = isMovieWatched,
                         isMovieWatchedPending = isMovieWatchedPending,
                         onToggleMovieWatched = onToggleMovieWatched,

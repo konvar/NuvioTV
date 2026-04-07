@@ -17,8 +17,10 @@ interface LibraryRepository {
 
     fun isInLibrary(itemId: String, itemType: String): Flow<Boolean>
     fun isInWatchlist(itemId: String, itemType: String): Flow<Boolean>
+    fun isInFavorites(itemId: String, itemType: String): Flow<Boolean>
 
     suspend fun toggleDefault(item: LibraryEntryInput)
+    suspend fun toggleFavorite(item: LibraryEntryInput)
     suspend fun getMembershipSnapshot(item: LibraryEntryInput): ListMembershipSnapshot
     suspend fun applyMembershipChanges(item: LibraryEntryInput, changes: ListMembershipChanges)
 

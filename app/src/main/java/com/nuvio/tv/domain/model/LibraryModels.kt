@@ -73,6 +73,8 @@ data class LibraryListTab(
 ) {
     enum class Type {
         WATCHLIST,
+        FAVORITES,
+        HIDDEN_PROGRESS,
         PERSONAL
     }
 }

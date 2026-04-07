@@ -28,6 +28,7 @@ import com.nuvio.tv.domain.model.Meta
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.data.repository.MDBListRepository
 import com.nuvio.tv.data.repository.TraktProgressService
+import com.nuvio.tv.data.repository.UpcomingRepository
 import com.nuvio.tv.domain.model.MDBListSettings
 import com.nuvio.tv.domain.model.TmdbSettings
 import com.nuvio.tv.domain.repository.AddonRepository
@@ -72,6 +73,7 @@ class HomeViewModel @Inject constructor(
     internal val tmdbMetadataService: TmdbMetadataService,
     internal val mdbListRepository: MDBListRepository,
     internal val traktProgressService: TraktProgressService,
+    internal val upcomingRepository: UpcomingRepository,
     internal val trailerService: TrailerService,
     internal val watchedItemsPreferences: WatchedItemsPreferences,
     internal val watchedSeriesStateHolder: com.nuvio.tv.data.local.WatchedSeriesStateHolder,
@@ -195,6 +197,7 @@ class HomeViewModel @Inject constructor(
         observeBlurUnwatchedEpisodes()
         observeStartupAuthNotice()
         loadContinueWatching()
+        observeUpcomingSections()
         observeCollections()
         observeInstalledAddons()
         viewModelScope.launch {
@@ -289,6 +292,22 @@ class HomeViewModel @Inject constructor(
             } else {
                 state
             }
+        }
+    }
+
+    private fun observeUpcomingSections() {
+        viewModelScope.launch {
+            upcomingRepository.observeSections()
+                .distinctUntilChanged()
+                .collectLatest { sections ->
+                    _uiState.update { state ->
+                        if (state.upcomingSections == sections) state else state.copy(upcomingSections = sections)
+                    }
+                    scheduleUpdateCatalogRows()
+                }
+        }
+        viewModelScope.launch {
+            upcomingRepository.refreshNow(force = false)
         }
     }
 
