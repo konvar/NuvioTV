@@ -70,6 +70,8 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.platform.LocalContext
@@ -89,6 +91,12 @@ fun HeroContentSection(
     isInLibrary: Boolean,
     onToggleLibrary: () -> Unit,
     onLibraryLongPress: () -> Unit,
+    isInFavorites: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
+    favoriteEnabled: Boolean = false,
+    isHiddenFromProgress: Boolean = false,
+    onToggleHiddenProgress: () -> Unit = {},
+    hideFromProgressEnabled: Boolean = false,
     isMovieWatched: Boolean,
     isMovieWatchedPending: Boolean,
     onToggleMovieWatched: () -> Unit,
@@ -258,6 +266,38 @@ fun HeroContentSection(
                             onLongPress = onLibraryLongPress,
                             onFocused = onHeroActionFocused
                         )
+
+                        if (favoriteEnabled) {
+                            ActionIconButton(
+                                icon = if (isInFavorites) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = if (isInFavorites) {
+                                    stringResource(R.string.hero_remove_from_favorites)
+                                } else {
+                                    stringResource(R.string.hero_add_to_favorites)
+                                },
+                                onClick = onToggleFavorite,
+                                selected = isInFavorites,
+                                selectedContainerColor = Color.White,
+                                selectedContentColor = Color.Black,
+                                onFocused = onHeroActionFocused
+                            )
+                        }
+
+                        if (hideFromProgressEnabled) {
+                            ActionIconButton(
+                                icon = if (isHiddenFromProgress) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (isHiddenFromProgress) {
+                                    stringResource(R.string.hero_unhide_from_continue_watching)
+                                } else {
+                                    stringResource(R.string.hero_hide_from_continue_watching)
+                                },
+                                onClick = onToggleHiddenProgress,
+                                selected = isHiddenFromProgress,
+                                selectedContainerColor = Color.White,
+                                selectedContentColor = Color.Black,
+                                onFocused = onHeroActionFocused
+                            )
+                        }
 
                         if (meta.apiType == "movie") {
                             ActionIconButton(

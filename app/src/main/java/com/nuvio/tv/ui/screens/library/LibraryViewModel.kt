@@ -6,9 +6,11 @@ import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.data.local.LayoutPreferenceDataStore
 import com.nuvio.tv.data.local.LibraryPreferences
 import com.nuvio.tv.data.local.TraktAuthDataStore
+import com.nuvio.tv.data.repository.TraktProgressService
 import com.nuvio.tv.data.repository.TraktLibraryService
 import com.nuvio.tv.domain.model.AuthState
 import com.nuvio.tv.domain.model.LibraryEntry
+import com.nuvio.tv.domain.model.LibraryEntryInput
 import com.nuvio.tv.domain.model.LibraryListTab
 import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.TraktListPrivacy
@@ -110,6 +112,7 @@ class LibraryViewModel @Inject constructor(
     private val libraryPreferences: LibraryPreferences,
     private val authManager: AuthManager,
     private val traktAuthDataStore: TraktAuthDataStore,
+    private val traktProgressService: TraktProgressService,
     private val watchProgressRepository: com.nuvio.tv.domain.repository.WatchProgressRepository,
     private val watchedSeriesStateHolder: com.nuvio.tv.data.local.WatchedSeriesStateHolder,
     val posterOptions: com.nuvio.tv.ui.components.posteroptions.PosterOptionsController,
@@ -188,6 +191,50 @@ class LibraryViewModel @Inject constructor(
                 setTransientMessage("Library synced")
             }.onFailure { error ->
                 setError(error.message ?: "Failed to refresh library")
+            }
+        }
+    }
+
+    fun onToggleFavorite(entry: LibraryEntry) {
+        if (_uiState.value.pendingOperation || _uiState.value.sourceMode != LibrarySourceMode.TRAKT) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingOperation = true, errorMessage = null) }
+            runCatching {
+                libraryRepository.toggleFavorite(entry.toLibraryEntryInput())
+                val message = if (entry.listKeys.contains(TraktLibraryService.FAVORITES_KEY)) {
+                    context.getString(R.string.detail_removed_from_favorites)
+                } else {
+                    context.getString(R.string.detail_added_to_favorites)
+                }
+                setTransientMessage(message)
+            }.onSuccess {
+                _uiState.update { it.copy(pendingOperation = false) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(pendingOperation = false) }
+                setError(error.message ?: "Failed to update favorites")
+            }
+        }
+    }
+
+    fun onToggleHiddenProgress(entry: LibraryEntry) {
+        val isSeries = entry.type.equals("series", ignoreCase = true) || entry.type.equals("tv", ignoreCase = true)
+        if (!isSeries || _uiState.value.pendingOperation || _uiState.value.sourceMode != LibrarySourceMode.TRAKT) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingOperation = true, errorMessage = null) }
+            runCatching {
+                val input = entry.toLibraryEntryInput()
+                if (entry.listKeys.contains("hidden_progress")) {
+                    traktProgressService.unhideShowFromProgress(input)
+                    setTransientMessage(context.getString(R.string.detail_restored_to_continue_watching))
+                } else {
+                    traktProgressService.hideShowFromProgress(input)
+                    setTransientMessage(context.getString(R.string.detail_hidden_from_continue_watching))
+                }
+            }.onSuccess {
+                _uiState.update { it.copy(pendingOperation = false) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(pendingOperation = false) }
+                setError(error.message ?: "Failed to update hidden shows")
             }
         }
     }
@@ -517,6 +564,26 @@ class LibraryViewModel @Inject constructor(
             delay(2200)
             _uiState.update { it.copy(transientMessage = null) }
         }
+    }
+
+    private fun LibraryEntry.toLibraryEntryInput(): LibraryEntryInput {
+        return LibraryEntryInput(
+            itemId = id,
+            itemType = type,
+            title = name,
+            traktId = traktId,
+            imdbId = imdbId,
+            tmdbId = tmdbId,
+            poster = poster,
+            posterShape = posterShape,
+            background = background,
+            logo = logo,
+            description = description,
+            releaseInfo = releaseInfo,
+            imdbRating = imdbRating,
+            genres = genres,
+            addonBaseUrl = addonBaseUrl
+        )
     }
 
     private fun prettifyTypeLabel(key: String): String {

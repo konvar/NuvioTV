@@ -81,6 +81,9 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val smoothBringIntoViewEnabledKey = booleanPreferencesKey("smooth_bring_into_view_enabled")
     private val fastHorizontalNavigationEnabledKey = booleanPreferencesKey("fast_horizontal_navigation_enabled")
     private val followAddonsOrderKey = booleanPreferencesKey("follow_addons_order")
+    private val showContinueWatchingOnHomeKey = booleanPreferencesKey("show_continue_watching_on_home")
+    private val showUpcomingOnHomeKey = booleanPreferencesKey("show_upcoming_on_home")
+    private val showUpcomingInSidebarKey = booleanPreferencesKey("show_upcoming_in_sidebar")
 
     private fun <T> profileFlow(extract: (prefs: androidx.datastore.preferences.core.Preferences) -> T): Flow<T> =
         profileManager.activeProfileId.flatMapLatest { pid ->
@@ -279,6 +282,18 @@ class LayoutPreferenceDataStore @Inject constructor(
         store().edit { prefs ->
             prefs[followAddonsOrderKey] = enabled
         }
+    }
+
+    val showContinueWatchingOnHome: Flow<Boolean> = profileFlow { prefs ->
+        prefs[showContinueWatchingOnHomeKey] ?: true
+    }
+
+    val showUpcomingOnHome: Flow<Boolean> = profileFlow { prefs ->
+        prefs[showUpcomingOnHomeKey] ?: true
+    }
+
+    val showUpcomingInSidebar: Flow<Boolean> = profileFlow { prefs ->
+        prefs[showUpcomingInSidebarKey] ?: true
     }
 
     suspend fun setLayout(layout: HomeLayout) {
@@ -499,6 +514,24 @@ class LayoutPreferenceDataStore @Inject constructor(
     suspend fun setShowFullReleaseDate(enabled: Boolean) {
         store().edit { prefs ->
             prefs[showFullReleaseDateKey] = enabled
+        }
+    }
+
+    suspend fun setShowContinueWatchingOnHome(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[showContinueWatchingOnHomeKey] = enabled
+        }
+    }
+
+    suspend fun setShowUpcomingOnHome(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[showUpcomingOnHomeKey] = enabled
+        }
+    }
+
+    suspend fun setShowUpcomingInSidebar(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[showUpcomingInSidebarKey] = enabled
         }
     }
 

@@ -28,6 +28,9 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktShowSeasonProgressDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktUpNextItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktUserEpisodeHistoryItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktWatchedShowItemDto
+import com.nuvio.tv.domain.model.LibraryEntry
+import com.nuvio.tv.domain.model.LibraryEntryInput
+import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.repository.MetaRepository
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -83,6 +86,7 @@ class TraktProgressService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "TraktProgressSvc"
+        private const val HIDDEN_PROGRESS_KEY = "hidden_progress"
     }
 
     private fun trace(message: String) {
@@ -182,6 +186,7 @@ class TraktProgressService @Inject constructor(
     private val upNextState = MutableStateFlow<List<TraktUpNextEntry>>(emptyList())
     /** Content IDs of shows dropped on Trakt (from users/hidden/progress_watched). */
     private val hiddenProgressShowIds = MutableStateFlow<Set<String>>(emptySet())
+    private val hiddenProgressEntriesState = MutableStateFlow<List<LibraryEntry>>(emptyList())
     private var hiddenProgressShowsLoadedAtMs: Long = 0L
     private val hiddenProgressShowsMutex = Mutex()
     /** Per-show set of watched (season, episode) pairs from /sync/watched/shows. */
@@ -424,6 +429,96 @@ class TraktProgressService @Inject constructor(
         refreshSignals.emit(Unit)
     }
 
+    suspend fun hideShowFromProgress(item: LibraryEntryInput) {
+        val ids = resolveHiddenIds(item)
+        if (!ids.hasAnyId()) {
+            throw IllegalStateException("Missing Trakt IDs for hidden-progress mutation")
+        }
+        val body = com.nuvio.tv.data.remote.dto.trakt.TraktListItemsMutationRequestDto(
+            shows = listOf(
+                com.nuvio.tv.data.remote.dto.trakt.TraktListShowRequestItemDto(
+                    title = item.title,
+                    year = item.year,
+                    ids = ids
+                )
+            )
+        )
+        val response = traktAuthService.executeAuthorizedWriteRequest { authHeader ->
+            traktApi.addHiddenItems(
+                authorization = authHeader,
+                section = "progress_watched",
+                body = body
+            )
+        } ?: throw IllegalStateException("Trakt request failed")
+        if (!response.isSuccessful) {
+            throw IllegalStateException("Failed to hide show from continue watching (${response.code()})")
+        }
+        hiddenProgressShowIds.value = hiddenProgressShowIds.value + hiddenLookupKeys(ids)
+        hiddenProgressEntriesState.update { current ->
+            val contentId = normalizeContentId(ids, fallback = item.itemId.trim()).ifBlank { item.itemId.trim() }
+            val canonical = canonicalLookupKey(contentId)
+            if (current.any { canonicalLookupKey(it.id) == canonical }) {
+                current
+            } else {
+                listOf(
+                    LibraryEntry(
+                        id = contentId,
+                        type = "series",
+                        name = item.title.ifBlank { contentId },
+                        poster = item.poster,
+                        posterShape = item.posterShape,
+                        background = item.background,
+                        logo = item.logo,
+                        description = item.description,
+                        releaseInfo = item.releaseInfo,
+                        imdbRating = item.imdbRating,
+                        genres = item.genres,
+                        addonBaseUrl = item.addonBaseUrl,
+                        listKeys = setOf(HIDDEN_PROGRESS_KEY),
+                        listedAt = System.currentTimeMillis(),
+                        imdbId = item.imdbId,
+                        tmdbId = item.tmdbId,
+                        traktId = item.traktId
+                    )
+                ) + current
+            }
+        }
+        persistSnapshot()
+    }
+
+    suspend fun unhideShowFromProgress(item: LibraryEntryInput) {
+        val ids = resolveHiddenIds(item)
+        if (!ids.hasAnyId()) {
+            throw IllegalStateException("Missing Trakt IDs for hidden-progress mutation")
+        }
+        val body = com.nuvio.tv.data.remote.dto.trakt.TraktListItemsMutationRequestDto(
+            shows = listOf(
+                com.nuvio.tv.data.remote.dto.trakt.TraktListShowRequestItemDto(
+                    title = item.title,
+                    year = item.year,
+                    ids = ids
+                )
+            )
+        )
+        val response = traktAuthService.executeAuthorizedWriteRequest { authHeader ->
+            traktApi.removeHiddenItems(
+                authorization = authHeader,
+                section = "progress_watched",
+                body = body
+            )
+        } ?: throw IllegalStateException("Trakt request failed")
+        if (!response.isSuccessful) {
+            throw IllegalStateException("Failed to unhide show from continue watching (${response.code()})")
+        }
+        val hiddenKeys = hiddenLookupKeys(ids)
+        hiddenProgressShowIds.value = hiddenProgressShowIds.value - hiddenKeys
+        val canonicalKeys = hiddenKeys.map(::canonicalLookupKey).toSet()
+        hiddenProgressEntriesState.update { current ->
+            current.filterNot { canonicalLookupKey(it.id) in canonicalKeys }
+        }
+        persistSnapshot()
+    }
+
     suspend fun getCachedStats(forceRefresh: Boolean = false): TraktCachedStats? {
         val now = System.currentTimeMillis()
         cacheMutex.withLock {
@@ -563,6 +658,23 @@ class TraktProgressService @Inject constructor(
 
     fun observeUpNextLoaded(): Flow<Boolean> {
         return hasLoadedUpNext
+    }
+
+    fun observeHiddenProgressEntries(): Flow<List<LibraryEntry>> {
+        return hiddenProgressEntriesState
+            .onStart {
+                scope.launch { ensureHiddenProgressShows(force = false) }
+            }
+            .distinctUntilChanged()
+    }
+
+    fun observeHiddenProgressMembership(contentId: String): Flow<Boolean> {
+        return hiddenProgressShowIds
+            .map { ids ->
+                val canonical = canonicalLookupKey(contentId)
+                ids.contains(contentId) || ids.contains(canonical)
+            }
+            .distinctUntilChanged()
     }
 
     /**
@@ -1208,24 +1320,32 @@ class TraktProgressService @Inject constructor(
                 return
             }
         }
-        val ids = fetchHiddenProgressShowIds()
+        val snapshot = fetchHiddenProgressShowsSnapshot()
         hiddenProgressShowsMutex.withLock {
-            hiddenProgressShowIds.value = ids
+            hiddenProgressShowIds.value = snapshot.ids
+            hiddenProgressEntriesState.value = snapshot.entries
             hiddenProgressShowsLoadedAtMs = System.currentTimeMillis()
         }
-        trace("hidden-progress-shows refreshed: ${ids.size} shows")
+        trace("hidden-progress-shows refreshed: ids=${snapshot.ids.size} entries=${snapshot.entries.size}")
     }
 
-    private suspend fun fetchHiddenProgressShowIds(): Set<String> {
+    private data class HiddenProgressSnapshot(
+        val ids: Set<String>,
+        val entries: List<LibraryEntry>
+    )
+
+    private suspend fun fetchHiddenProgressShowsSnapshot(): HiddenProgressSnapshot {
         val allIds = mutableSetOf<String>()
+        val entries = mutableListOf<LibraryEntry>()
         var page = 1
         val limit = 100
         while (true) {
             val response = traktAuthService.executeAuthorizedRequest { authHeader ->
                 traktApi.getHiddenItems(
                     authorization = authHeader,
-                    section = "dropped",
+                    section = "progress_watched",
                     type = "show",
+                    extended = "full,images",
                     page = page,
                     limit = limit
                 )
@@ -1238,14 +1358,38 @@ class TraktProgressService @Inject constructor(
             if (items.isEmpty()) break
             for (item in items) {
                 val ids = item.show?.ids ?: continue
-                ids.imdb?.takeIf { it.isNotBlank() }?.let { allIds.add(it) }
-                ids.tmdb?.let { allIds.add("tmdb:$it") }
-                ids.trakt?.let { allIds.add("trakt:$it") }
+                allIds += hiddenLookupKeys(ids)
+                val show = item.show
+                val contentId = normalizeContentId(ids, fallback = show?.title ?: "trakt:${ids.trakt ?: page}")
+                entries += LibraryEntry(
+                    id = contentId,
+                    type = "series",
+                    name = show?.title ?: contentId,
+                    poster = firstTraktImage(show?.images?.poster),
+                    posterShape = PosterShape.POSTER,
+                    background = firstTraktImage(show?.images?.fanart, show?.images?.banner, show?.images?.thumb),
+                    logo = firstTraktImage(show?.images?.logo, show?.images?.clearart),
+                    description = show?.overview,
+                    releaseInfo = show?.year?.toString(),
+                    imdbRating = show?.rating?.toFloat(),
+                    genres = show?.genres.orEmpty(),
+                    addonBaseUrl = null,
+                    listKeys = setOf(HIDDEN_PROGRESS_KEY),
+                    listedAt = parseIsoToMillis(item.hiddenAt),
+                    imdbId = ids.imdb,
+                    tmdbId = ids.tmdb,
+                    traktId = ids.trakt
+                )
             }
             if (items.size < limit) break
             page++
         }
-        return allIds
+        return HiddenProgressSnapshot(
+            ids = allIds,
+            entries = entries
+                .distinctBy { canonicalLookupKey(it.id) }
+                .sortedByDescending { it.listedAt }
+        )
     }
 
     private suspend fun getWatchedMoviesSnapshot(forceRefresh: Boolean): Set<String> {
@@ -1418,6 +1562,31 @@ class TraktProgressService @Inject constructor(
             .flatMap { it.orEmpty().asSequence() }
             .map { it.trim() }
             .firstOrNull { it.isNotEmpty() }
+            ?.let { image ->
+                when {
+                    image.startsWith("https://", ignoreCase = true) -> image
+                    image.startsWith("http://", ignoreCase = true) -> "https://${image.removePrefix("http://")}"
+                    image.startsWith("//") -> "https:$image"
+                    else -> "https://$image"
+                }
+            }
+    }
+
+    private fun resolveHiddenIds(item: LibraryEntryInput): TraktIdsDto {
+        val parsed = parseContentIds(item.itemId)
+        return TraktIdsDto(
+            trakt = item.traktId ?: parsed.trakt,
+            imdb = item.imdbId ?: parsed.imdb,
+            tmdb = item.tmdbId ?: parsed.tmdb
+        )
+    }
+
+    private fun hiddenLookupKeys(ids: TraktIdsDto): Set<String> {
+        return buildSet {
+            ids.imdb?.takeIf { it.isNotBlank() }?.let { add(it) }
+            ids.tmdb?.let { add("tmdb:$it") }
+            ids.trakt?.let { add("trakt:$it") }
+        }
     }
 
     private suspend fun isShowFullyWatchedForContinueWatching(contentId: String): Boolean {

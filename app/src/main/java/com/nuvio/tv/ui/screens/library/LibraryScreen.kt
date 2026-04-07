@@ -69,8 +69,10 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.domain.model.LibraryListTab
 import com.nuvio.tv.domain.model.LibrarySourceMode
+import com.nuvio.tv.domain.model.LibraryEntry
 import com.nuvio.tv.domain.model.PosterShape
 import com.nuvio.tv.domain.model.TraktListPrivacy
+import com.nuvio.tv.data.repository.TraktLibraryService
 import com.nuvio.tv.ui.components.EmptyScreenState
 import com.nuvio.tv.ui.components.GridContentCard
 import com.nuvio.tv.ui.components.PosterCardDefaults
@@ -105,6 +107,7 @@ fun LibraryScreen(
     val watchedMovieIds by viewModel.watchedMovieIds.collectAsState()
     val watchedSeriesIds by viewModel.watchedSeriesIds.collectAsState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var actionItem by remember { mutableStateOf<LibraryEntry?>(null) }
     var expandedPicker by remember { mutableStateOf<String?>(null) }
     val primaryFocusRequester = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
@@ -344,7 +347,11 @@ fun LibraryScreen(
                 },
                 onLongPress = {
                     lastFocusedPosterKey = focusKey
-                    viewModel.posterOptions.show(previewForLongPress, item.addonBaseUrl)
+                    if (uiState.sourceMode == LibrarySourceMode.TRAKT) {
+                        actionItem = item
+                    } else {
+                        viewModel.posterOptions.show(previewForLongPress, item.addonBaseUrl)
+                    }
                 }
             )
         }
@@ -392,6 +399,22 @@ fun LibraryScreen(
         )
     }
 
+    actionItem?.let { entry ->
+        LibraryItemActionsDialog(
+            entry = entry,
+            pending = uiState.pendingOperation,
+            onDismiss = { actionItem = null },
+            onToggleFavorite = {
+                viewModel.onToggleFavorite(entry)
+                actionItem = null
+            },
+            onToggleHiddenProgress = {
+                viewModel.onToggleHiddenProgress(entry)
+                actionItem = null
+            }
+        )
+    }
+
     val transientMessage = uiState.transientMessage
     if (!transientMessage.isNullOrBlank()) {
         Box(
@@ -419,6 +442,75 @@ fun LibraryScreen(
             onNavigateToDetail(id, type, addonBaseUrl.takeIf { it.isNotBlank() })
         }
     )
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun LibraryItemActionsDialog(
+    entry: LibraryEntry,
+    pending: Boolean,
+    onDismiss: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onToggleHiddenProgress: () -> Unit
+) {
+    val isFavorite = entry.listKeys.contains(TraktLibraryService.FAVORITES_KEY)
+    val isHidden = entry.listKeys.contains("hidden_progress")
+    val isSeries = entry.type.equals("series", ignoreCase = true) || entry.type.equals("tv", ignoreCase = true)
+
+    NuvioDialog(
+        onDismiss = onDismiss,
+        title = entry.name,
+        subtitle = stringResource(R.string.library_item_actions_subtitle)
+    ) {
+        Button(
+            onClick = onToggleFavorite,
+            enabled = !pending,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.colors(
+                containerColor = NuvioColors.BackgroundCard,
+                contentColor = NuvioColors.TextPrimary
+            )
+        ) {
+            Text(
+                text = if (isFavorite) {
+                    stringResource(R.string.hero_remove_from_favorites)
+                } else {
+                    stringResource(R.string.hero_add_to_favorites)
+                }
+            )
+        }
+
+        if (isSeries) {
+            Button(
+                onClick = onToggleHiddenProgress,
+                enabled = !pending,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.colors(
+                    containerColor = NuvioColors.BackgroundCard,
+                    contentColor = NuvioColors.TextPrimary
+                )
+            ) {
+                Text(
+                    text = if (isHidden) {
+                        stringResource(R.string.hero_unhide_from_continue_watching)
+                    } else {
+                        stringResource(R.string.hero_hide_from_continue_watching)
+                    }
+                )
+            }
+        }
+
+        Button(
+            onClick = onDismiss,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.colors(
+                containerColor = NuvioColors.Background,
+                contentColor = NuvioColors.TextSecondary
+            )
+        ) {
+            Text(text = stringResource(R.string.cancel))
+        }
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

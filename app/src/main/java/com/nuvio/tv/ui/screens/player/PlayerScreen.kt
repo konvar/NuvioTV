@@ -96,6 +96,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
 import androidx.tv.material3.IconButton
@@ -1180,6 +1182,7 @@ fun PlayerScreen(
                 uiState = uiState,
                 onRatingSelected = { viewModel.onEvent(PlayerEvent.OnSelectTraktRating(it)) },
                 onSubmit = { viewModel.onEvent(PlayerEvent.OnSubmitTraktRating(it)) },
+                onRemove = { viewModel.onEvent(PlayerEvent.OnRemoveTraktRating) },
                 onDismiss = { viewModel.onEvent(PlayerEvent.OnDismissTraktRatingDialog) }
             )
         }
@@ -2585,6 +2588,7 @@ private fun TraktRatingDialog(
     uiState: PlayerUiState,
     onRatingSelected: (Int) -> Unit,
     onSubmit: (Int) -> Unit,
+    onRemove: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val selectorFocusRequester = remember { FocusRequester() }
@@ -2714,6 +2718,18 @@ private fun TraktRatingDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = NuvioColors.TextSecondary
                 )
+            }
+
+            if (existingRating != null && !uiState.traktRatingSubmitting) {
+                Button(
+                    onClick = onRemove,
+                    colors = ButtonDefaults.colors(
+                        containerColor = NuvioColors.BackgroundCard,
+                        contentColor = NuvioColors.TextPrimary
+                    )
+                ) {
+                    Text(text = stringResource(R.string.trakt_rating_remove))
+                }
             }
 
             if (uiState.traktRatingSubmitting) {

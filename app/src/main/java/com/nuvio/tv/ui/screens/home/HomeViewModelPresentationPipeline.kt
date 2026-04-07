@@ -30,12 +30,22 @@ private data class CoreLayoutPrefs(
     val layout: HomeLayout,
     val heroCatalogKeys: List<String>,
     val heroSectionEnabled: Boolean,
+    val showContinueWatchingOnHome: Boolean,
+    val showUpcomingOnHome: Boolean,
     val posterLabelsEnabled: Boolean,
     val catalogAddonNameEnabled: Boolean,
     val catalogTypeSuffixEnabled: Boolean,
     val classicFocusGradientEnabled: Boolean,
     val hideUnreleasedContent: Boolean,
     val showFullReleaseDate: Boolean
+)
+
+private data class CoreLayoutPrimaryPrefs(
+    val layout: HomeLayout,
+    val heroCatalogKeys: List<String>,
+    val heroSectionEnabled: Boolean,
+    val showContinueWatchingOnHome: Boolean,
+    val showUpcomingOnHome: Boolean
 )
 
 private data class FocusedBackdropPrefs(
@@ -50,6 +60,8 @@ private data class LayoutUiPrefs(
     val layout: HomeLayout,
     val heroCatalogKeys: List<String>,
     val heroSectionEnabled: Boolean,
+    val showContinueWatchingOnHome: Boolean,
+    val showUpcomingOnHome: Boolean,
     val posterLabelsEnabled: Boolean,
     val catalogAddonNameEnabled: Boolean,
     val catalogTypeSuffixEnabled: Boolean,
@@ -72,16 +84,30 @@ private data class LayoutUiPrefs(
 internal fun HomeViewModel.observeLayoutPreferencesPipeline() {
     val coreLayoutPrefsFlow = combine(
         combine(
-            layoutPreferenceDataStore.selectedLayout,
-            layoutPreferenceDataStore.heroCatalogSelections,
-            layoutPreferenceDataStore.heroSectionEnabled,
+            combine(
+                layoutPreferenceDataStore.selectedLayout,
+                layoutPreferenceDataStore.heroCatalogSelections,
+                layoutPreferenceDataStore.heroSectionEnabled,
+                layoutPreferenceDataStore.showContinueWatchingOnHome,
+                layoutPreferenceDataStore.showUpcomingOnHome
+            ) { layout, heroCatalogKeys, heroSectionEnabled, showContinueWatchingOnHome, showUpcomingOnHome ->
+                CoreLayoutPrimaryPrefs(
+                    layout = layout,
+                    heroCatalogKeys = heroCatalogKeys,
+                    heroSectionEnabled = heroSectionEnabled,
+                    showContinueWatchingOnHome = showContinueWatchingOnHome,
+                    showUpcomingOnHome = showUpcomingOnHome
+                )
+            },
             layoutPreferenceDataStore.posterLabelsEnabled,
             layoutPreferenceDataStore.catalogAddonNameEnabled
-        ) { layout, heroCatalogKeys, heroSectionEnabled, posterLabelsEnabled, catalogAddonNameEnabled ->
+        ) { primaryPrefs, posterLabelsEnabled, catalogAddonNameEnabled ->
             CoreLayoutPrefs(
-                layout = layout,
-                heroCatalogKeys = heroCatalogKeys,
-                heroSectionEnabled = heroSectionEnabled,
+                layout = primaryPrefs.layout,
+                heroCatalogKeys = primaryPrefs.heroCatalogKeys,
+                heroSectionEnabled = primaryPrefs.heroSectionEnabled,
+                showContinueWatchingOnHome = primaryPrefs.showContinueWatchingOnHome,
+                showUpcomingOnHome = primaryPrefs.showUpcomingOnHome,
                 posterLabelsEnabled = posterLabelsEnabled,
                 catalogAddonNameEnabled = catalogAddonNameEnabled,
                 catalogTypeSuffixEnabled = true,
@@ -137,6 +163,8 @@ internal fun HomeViewModel.observeLayoutPreferencesPipeline() {
             layout = corePrefs.layout,
             heroCatalogKeys = corePrefs.heroCatalogKeys,
             heroSectionEnabled = corePrefs.heroSectionEnabled,
+            showContinueWatchingOnHome = corePrefs.showContinueWatchingOnHome,
+            showUpcomingOnHome = corePrefs.showUpcomingOnHome,
             posterLabelsEnabled = corePrefs.posterLabelsEnabled,
             catalogAddonNameEnabled = corePrefs.catalogAddonNameEnabled,
             catalogTypeSuffixEnabled = corePrefs.catalogTypeSuffixEnabled,
@@ -180,6 +208,8 @@ internal fun HomeViewModel.observeLayoutPreferencesPipeline() {
                 val shouldRefreshCatalogPresentation =
                     heroKeysChanged ||
                         previousState.heroSectionEnabled != prefs.heroSectionEnabled ||
+                        previousState.showContinueWatchingOnHome != prefs.showContinueWatchingOnHome ||
+                        previousState.showUpcomingOnHome != prefs.showUpcomingOnHome ||
                         previousState.homeLayout != prefs.layout ||
                         previousState.hideUnreleasedContent != prefs.hideUnreleasedContent ||
                         previousState.posterCardWidthDp != prefs.posterCardWidthDp
@@ -200,6 +230,8 @@ internal fun HomeViewModel.observeLayoutPreferencesPipeline() {
                         homeLayout = prefs.layout,
                         heroCatalogKeys = prefs.heroCatalogKeys,
                         heroSectionEnabled = prefs.heroSectionEnabled,
+                        showContinueWatchingOnHome = prefs.showContinueWatchingOnHome,
+                        showUpcomingOnHome = prefs.showUpcomingOnHome,
                         posterLabelsEnabled = effectivePosterLabelsEnabled,
                         catalogAddonNameEnabled = prefs.catalogAddonNameEnabled,
                         catalogTypeSuffixEnabled = prefs.catalogTypeSuffixEnabled,
@@ -240,7 +272,11 @@ internal fun HomeViewModel.observeModernHomePresentationPipeline() {
                 ModernHomePresentationInput(
                     homeRows = state.homeRows,
                     catalogRows = state.catalogRows,
-                    continueWatchingItems = state.continueWatchingItems,
+                    continueWatchingItems = if (state.showContinueWatchingOnHome) {
+                        state.continueWatchingItems
+                    } else {
+                        emptyList()
+                    },
                     useLandscapePosters = state.modernLandscapePostersEnabled,
                     showCatalogTypeSuffix = state.catalogTypeSuffixEnabled,
                     showFullReleaseDate = state.showFullReleaseDate

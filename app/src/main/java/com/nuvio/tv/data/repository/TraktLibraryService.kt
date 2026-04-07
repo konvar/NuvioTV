@@ -5,6 +5,7 @@ import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.data.remote.api.TraktApi
 import com.nuvio.tv.data.remote.dto.trakt.TraktCreateOrUpdateListRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktIdsDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktImagesDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktListItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktListItemsMutationRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktListItemsMutationResponseDto
@@ -119,6 +120,12 @@ class TraktLibraryService @Inject constructor(
         return refreshingState
     }
 
+    fun observeFavoriteMembership(itemId: String, itemType: String): Flow<Boolean> {
+        return observeMembership(itemId = itemId, itemType = itemType)
+            .map { memberships -> memberships.contains(FAVORITES_KEY) }
+            .distinctUntilChanged()
+    }
+
     suspend fun getMembershipSnapshot(item: LibraryEntryInput): ListMembershipSnapshot {
         ensureFresh()
         val snapshot = snapshotState.value
@@ -146,6 +153,26 @@ class TraktLibraryService @Inject constructor(
                 optimistic = { snapshot -> addItemToList(snapshot, item, WATCHLIST_KEY) }
             ) {
                 addToWatchlist(item)
+            }
+        }
+    }
+
+    suspend fun toggleFavorite(item: LibraryEntryInput) {
+        ensureFresh()
+        val key = contentKey(item.itemId, item.itemType)
+        val currentMembership = snapshotState.value.membershipByContent[key].orEmpty()
+        val isFavorite = currentMembership.contains(FAVORITES_KEY)
+        if (isFavorite) {
+            performOptimisticMutation(
+                optimistic = { snapshot -> removeItemFromList(snapshot, item, FAVORITES_KEY) }
+            ) {
+                removeFromFavorites(item)
+            }
+        } else {
+            performOptimisticMutation(
+                optimistic = { snapshot -> addItemToList(snapshot, item, FAVORITES_KEY) }
+            ) {
+                addToFavorites(item)
             }
         }
     }
@@ -474,6 +501,7 @@ class TraktLibraryService @Inject constructor(
 
     private suspend fun fetchSnapshot(): Snapshot {
         val watchlistEntries = fetchWatchlistEntries()
+        val favoriteEntries = fetchFavoriteEntries()
 
         val personalLists = fetchPersonalLists()
         val personalTabs = personalLists.tabs
@@ -489,11 +517,21 @@ class TraktLibraryService @Inject constructor(
                     sortHow = "asc"
                 )
             )
+            add(
+                LibraryListTab(
+                    key = FAVORITES_KEY,
+                    title = "Favorites",
+                    type = LibraryListTab.Type.FAVORITES,
+                    sortBy = "rank",
+                    sortHow = "asc"
+                )
+            )
             addAll(personalTabs)
         }
 
         val rawEntriesByList = linkedMapOf<String, List<LibraryEntry>>().apply {
             put(WATCHLIST_KEY, watchlistEntries)
+            put(FAVORITES_KEY, favoriteEntries)
             personalTabs.forEach { tab ->
                 put(tab.key, personalEntriesByList[tab.key].orEmpty())
             }
@@ -543,7 +581,8 @@ class TraktLibraryService @Inject constructor(
                 traktApi.getWatchlist(
                     authorization = authHeader,
                     type = "movies",
-                    page = page
+                    page = page,
+                    extended = "full,images"
                 )
             } ?: throw IllegalStateException("Failed to fetch watchlist movies")
         }
@@ -553,13 +592,45 @@ class TraktLibraryService @Inject constructor(
                 traktApi.getWatchlist(
                     authorization = authHeader,
                     type = "shows",
-                    page = page
+                    page = page,
+                    extended = "full,images"
                 )
             } ?: throw IllegalStateException("Failed to fetch watchlist shows")
         }
 
         return (movies + shows)
             .mapNotNull { mapListItem(listKey = WATCHLIST_KEY, item = it) }
+            .sortedWith(
+                compareBy<LibraryEntry> { it.traktRank ?: Int.MAX_VALUE }
+                    .thenByDescending { it.listedAt }
+            )
+    }
+
+    private suspend fun fetchFavoriteEntries(): List<LibraryEntry> {
+        val moviesResponse = traktAuthService.executeAuthorizedRequest { authHeader ->
+            traktApi.getFavorites(
+                authorization = authHeader,
+                id = ME_PATH,
+                type = "movies",
+                extended = "full,images"
+            )
+        } ?: throw IllegalStateException("Failed to fetch favorite movies")
+
+        val showsResponse = traktAuthService.executeAuthorizedRequest { authHeader ->
+            traktApi.getFavorites(
+                authorization = authHeader,
+                id = ME_PATH,
+                type = "shows",
+                extended = "full,images"
+            )
+        } ?: throw IllegalStateException("Failed to fetch favorite shows")
+
+        if (!moviesResponse.isSuccessful || !showsResponse.isSuccessful) {
+            throw IllegalStateException("Failed to fetch favorites")
+        }
+
+        return (moviesResponse.body().orEmpty() + showsResponse.body().orEmpty())
+            .mapNotNull { mapListItem(listKey = FAVORITES_KEY, item = it) }
             .sortedWith(
                 compareBy<LibraryEntry> { it.traktRank ?: Int.MAX_VALUE }
                     .thenByDescending { it.listedAt }
@@ -626,7 +697,8 @@ class TraktLibraryService @Inject constructor(
                     id = ME_PATH,
                     listId = listIdPath,
                     type = type,
-                    page = page
+                    page = page,
+                    extended = "full,images"
                 )
             } ?: throw IllegalStateException("Failed to fetch list items")
         }
@@ -687,13 +759,31 @@ class TraktLibraryService @Inject constructor(
             id = contentId,
             type = normalizedType,
             name = mediaTitle ?: contentId,
-            poster = null,
-            background = null,
-            logo = null,
-            description = null,
+            poster = when (normalizedType) {
+                "movie" -> item.movie?.images.bestPosterImage()
+                else -> item.show?.images.bestPosterImage()
+            },
+            background = when (normalizedType) {
+                "movie" -> item.movie?.images.bestBackdropImage()
+                else -> item.show?.images.bestBackdropImage()
+            },
+            logo = when (normalizedType) {
+                "movie" -> item.movie?.images.bestLogoImage()
+                else -> item.show?.images.bestLogoImage()
+            },
+            description = when (normalizedType) {
+                "movie" -> item.movie?.overview
+                else -> item.show?.overview
+            },
             releaseInfo = mediaYear?.toString(),
-            imdbRating = null,
-            genres = emptyList(),
+            imdbRating = when (normalizedType) {
+                "movie" -> item.movie?.rating?.toFloat()
+                else -> item.show?.rating?.toFloat()
+            },
+            genres = when (normalizedType) {
+                "movie" -> item.movie?.genres.orEmpty()
+                else -> item.show?.genres.orEmpty()
+            },
             addonBaseUrl = null,
             listKeys = setOf(listKey),
             listedAt = parseIsoToMillis(item.listedAt),
@@ -729,6 +819,34 @@ class TraktLibraryService @Inject constructor(
 
         if (!response.isSuccessful) {
             throw IllegalStateException(errorMessageForCode(response.code(), "Failed to remove from watchlist"))
+        }
+    }
+
+    private suspend fun addToFavorites(item: LibraryEntryInput) {
+        val body = buildMutationBody(item)
+        val response = traktAuthService.executeAuthorizedRequest { authHeader ->
+            traktApi.addToFavorites(
+                authorization = authHeader,
+                body = body
+            )
+        } ?: throw IllegalStateException("Trakt request failed")
+
+        if (!response.isSuccessful || !isSuccessfulAddResponse(response.body())) {
+            throw IllegalStateException(errorMessageForCode(response.code(), "Failed to add to favorites"))
+        }
+    }
+
+    private suspend fun removeFromFavorites(item: LibraryEntryInput) {
+        val body = buildMutationBody(item)
+        val response = traktAuthService.executeAuthorizedRequest { authHeader ->
+            traktApi.removeFromFavorites(
+                authorization = authHeader,
+                body = body
+            )
+        } ?: throw IllegalStateException("Trakt request failed")
+
+        if (!response.isSuccessful) {
+            throw IllegalStateException(errorMessageForCode(response.code(), "Failed to remove from favorites"))
         }
     }
 
@@ -968,7 +1086,45 @@ class TraktLibraryService @Inject constructor(
 
     companion object {
         const val WATCHLIST_KEY = "watchlist"
+        const val FAVORITES_KEY = "favorites"
         const val PERSONAL_KEY_PREFIX = "personal:"
         private const val ME_PATH = "me"
+    }
+}
+
+private fun TraktImagesDto?.bestPosterImage(): String? {
+    if (this == null) return null
+    return poster.firstImageUrl()
+        ?: thumb.firstImageUrl()
+        ?: fanart.firstImageUrl()
+        ?: banner.firstImageUrl()
+}
+
+private fun TraktImagesDto?.bestBackdropImage(): String? {
+    if (this == null) return null
+    return fanart.firstImageUrl()
+        ?: banner.firstImageUrl()
+        ?: thumb.firstImageUrl()
+        ?: poster.firstImageUrl()
+}
+
+private fun TraktImagesDto?.bestLogoImage(): String? {
+    if (this == null) return null
+    return logo.firstImageUrl() ?: clearart.firstImageUrl()
+}
+
+private fun List<String>?.firstImageUrl(): String? {
+    return this.orEmpty()
+        .firstOrNull { it.isNotBlank() }
+        ?.toHttpsImageUrl()
+}
+
+private fun String.toHttpsImageUrl(): String {
+    val normalized = trim()
+    return when {
+        normalized.startsWith("https://", ignoreCase = true) -> normalized
+        normalized.startsWith("http://", ignoreCase = true) -> "https://${normalized.removePrefix("http://")}"
+        normalized.startsWith("//") -> "https:$normalized"
+        else -> "https://$normalized"
     }
 }

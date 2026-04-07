@@ -222,6 +222,22 @@ data class TraktRatingsAddRequestDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class TraktRatingsRemoveMovieRequestDto(
+    @Json(name = "ids") val ids: TraktIdsDto
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingsRemoveEpisodeRequestDto(
+    @Json(name = "ids") val ids: TraktIdsDto
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingsRemoveRequestDto(
+    @Json(name = "movies") val movies: List<TraktRatingsRemoveMovieRequestDto>? = null,
+    @Json(name = "episodes") val episodes: List<TraktRatingsRemoveEpisodeRequestDto>? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class TraktRatingsAddResponseDto(
     @Json(name = "added") val added: TraktHistoryRemoveCountDto? = null,
     @Json(name = "not_found") val notFound: TraktRatingsNotFoundDto? = null

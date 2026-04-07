@@ -10,6 +10,7 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktHistoryAddRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktHistoryAddResponseDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktHistoryItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktCommentDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktCalendarShowItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktCreateOrUpdateListRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktListItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktListItemsMutationRequestDto
@@ -25,6 +26,7 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsAddRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsAddResponseDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRatedEpisodeItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRatedMovieItemDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsRemoveRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRevokeRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktScrobbleRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktScrobbleResponseDto
@@ -140,6 +142,7 @@ interface TraktApi {
         @Header("Authorization") authorization: String,
         @Path("section") section: String,
         @Query("type") type: String? = null,
+        @Query("extended") extended: String? = null,
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 100
     ): Response<List<TraktHiddenItemDto>>
@@ -255,6 +258,12 @@ interface TraktApi {
         @Body body: TraktRatingsAddRequestDto
     ): Response<TraktRatingsAddResponseDto>
 
+    @POST("sync/ratings/remove")
+    suspend fun removeRatings(
+        @Header("Authorization") authorization: String,
+        @Body body: TraktRatingsRemoveRequestDto
+    ): Response<TraktListItemsMutationResponseDto>
+
     @GET("sync/ratings/movies")
     suspend fun getRatedMovies(
         @Header("Authorization") authorization: String
@@ -307,7 +316,8 @@ interface TraktApi {
         @Path("list_id") listId: String,
         @Path("type") type: String,
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 100
+        @Query("limit") limit: Int = 100,
+        @Query("extended") extended: String? = null
     ): Response<List<TraktListItemDto>>
 
     @POST("users/{id}/lists/{list_id}/items")
@@ -331,8 +341,44 @@ interface TraktApi {
         @Header("Authorization") authorization: String,
         @Path("type") type: String,
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 100
+        @Query("limit") limit: Int = 100,
+        @Query("extended") extended: String? = null
     ): Response<List<TraktListItemDto>>
+
+    @GET("users/{id}/favorites/{type}/{sort}")
+    suspend fun getFavorites(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Path("type") type: String,
+        @Path("sort") sort: String = "rank",
+        @Query("extended") extended: String? = null
+    ): Response<List<TraktListItemDto>>
+
+    @POST("sync/favorites")
+    suspend fun addToFavorites(
+        @Header("Authorization") authorization: String,
+        @Body body: TraktListItemsMutationRequestDto
+    ): Response<TraktListItemsMutationResponseDto>
+
+    @POST("sync/favorites/remove")
+    suspend fun removeFromFavorites(
+        @Header("Authorization") authorization: String,
+        @Body body: TraktListItemsMutationRequestDto
+    ): Response<TraktListItemsMutationResponseDto>
+
+    @POST("users/hidden/{section}")
+    suspend fun addHiddenItems(
+        @Header("Authorization") authorization: String,
+        @Path("section") section: String,
+        @Body body: TraktListItemsMutationRequestDto
+    ): Response<TraktListItemsMutationResponseDto>
+
+    @POST("users/hidden/{section}/remove")
+    suspend fun removeHiddenItems(
+        @Header("Authorization") authorization: String,
+        @Path("section") section: String,
+        @Body body: TraktListItemsMutationRequestDto
+    ): Response<TraktListItemsMutationResponseDto>
 
     @POST("sync/watchlist")
     suspend fun addToWatchlist(
@@ -345,4 +391,22 @@ interface TraktApi {
         @Header("Authorization") authorization: String,
         @Body body: TraktListItemsMutationRequestDto
     ): Response<TraktListItemsMutationResponseDto>
+
+    @GET("calendars/{target}/shows/{start_date}/{days}")
+    suspend fun getCalendarShows(
+        @Header("Authorization") authorization: String,
+        @Path("target") target: String,
+        @Path("start_date") startDate: String,
+        @Path("days") days: Int,
+        @Query("extended") extended: String? = null
+    ): Response<List<TraktCalendarShowItemDto>>
+
+    @GET("calendars/{target}/shows/new/{start_date}/{days}")
+    suspend fun getCalendarNewShows(
+        @Header("Authorization") authorization: String,
+        @Path("target") target: String,
+        @Path("start_date") startDate: String,
+        @Path("days") days: Int,
+        @Query("extended") extended: String? = null
+    ): Response<List<TraktCalendarShowItemDto>>
 }

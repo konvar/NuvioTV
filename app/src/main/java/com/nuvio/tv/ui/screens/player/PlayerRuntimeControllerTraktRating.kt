@@ -129,6 +129,41 @@ internal fun PlayerRuntimeController.submitTraktRating(ratingOverride: Int? = nu
     }
 }
 
+internal fun PlayerRuntimeController.removeTraktRating() {
+    val item = pendingTraktRatingItem ?: run {
+        dismissTraktRatingDialog()
+        return
+    }
+
+    scope.launch {
+        _uiState.update { it.copy(traktRatingSubmitting = true, traktRatingError = null) }
+        val result = traktRatingService.removeRating(item)
+        result
+            .onSuccess {
+                _uiState.update {
+                    it.copy(
+                        showTraktRatingDialog = false,
+                        existingTraktRating = null,
+                        traktRatingSubmitting = false,
+                        traktRatingError = null
+                    )
+                }
+                pendingTraktRatingItem = null
+                if (pendingCompletionAction != null) {
+                    completePendingCompletionAction()
+                }
+            }
+            .onFailure {
+                _uiState.update {
+                    it.copy(
+                        traktRatingSubmitting = false,
+                        traktRatingError = "Unable to remove Trakt rating."
+                    )
+                }
+            }
+    }
+}
+
 internal fun PlayerRuntimeController.dismissTraktRatingDialog() {
     _uiState.update {
         it.copy(

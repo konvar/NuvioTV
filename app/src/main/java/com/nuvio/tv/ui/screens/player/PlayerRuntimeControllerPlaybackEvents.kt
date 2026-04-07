@@ -895,6 +895,9 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
         is PlayerEvent.OnSubmitTraktRating -> {
             submitTraktRating(ratingOverride = event.rating)
         }
+        PlayerEvent.OnRemoveTraktRating -> {
+            removeTraktRating()
+        }
         PlayerEvent.OnDismissTraktRatingDialog -> {
             dismissTraktRatingDialog()
         }

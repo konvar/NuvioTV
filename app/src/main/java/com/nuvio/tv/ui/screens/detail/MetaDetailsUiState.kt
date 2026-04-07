@@ -47,6 +47,10 @@ data class MetaDetailsUiState(
     val librarySourceMode: LibrarySourceMode = LibrarySourceMode.LOCAL,
     val libraryListTabs: List<LibraryListTab> = emptyList(),
     val isInWatchlist: Boolean = false,
+    val isInFavorites: Boolean = false,
+    val isFavoritePending: Boolean = false,
+    val isHiddenFromProgress: Boolean = false,
+    val isHiddenFromProgressPending: Boolean = false,
     val showListPicker: Boolean = false,
     val pickerMembership: Map<String, Boolean> = emptyMap(),
     val pickerPending: Boolean = false,
@@ -103,6 +107,8 @@ sealed class MetaDetailsEvent {
     data object OnDismissSharedTrailer : MetaDetailsEvent()
     data object OnRetrySharedTrailer : MetaDetailsEvent()
     data object OnToggleMovieWatched : MetaDetailsEvent()
+    data object OnToggleFavorite : MetaDetailsEvent()
+    data object OnToggleHiddenProgress : MetaDetailsEvent()
     data class OnToggleEpisodeWatched(val video: Video) : MetaDetailsEvent()
     data class OnMarkSeasonWatched(val season: Int) : MetaDetailsEvent()
     data class OnMarkSeasonUnwatched(val season: Int) : MetaDetailsEvent()
