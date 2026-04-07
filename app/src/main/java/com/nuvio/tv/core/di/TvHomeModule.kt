@@ -2,6 +2,8 @@ package com.nuvio.tv.core.di
 
 import com.nuvio.tv.tvhome.TvHomePublisher
 import com.nuvio.tv.tvhome.TvHomePublisherImpl
+import com.nuvio.tv.tvhome.TvHomeRecommendationsRepository
+import com.nuvio.tv.tvhome.TvHomeRecommendationsRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -15,4 +17,10 @@ abstract class TvHomeModule {
     @Binds
     @Singleton
     abstract fun bindTvHomePublisher(impl: TvHomePublisherImpl): TvHomePublisher
+
+    @Binds
+    @Singleton
+    abstract fun bindTvHomeRecommendationsRepository(
+        impl: TvHomeRecommendationsRepositoryImpl
+    ): TvHomeRecommendationsRepository
 }

@@ -49,7 +49,14 @@ data class LayoutSettingsUiState(
     val showFullReleaseDate: Boolean = true,
     val showContinueWatchingOnHome: Boolean = true,
     val showUpcomingOnHome: Boolean = true,
-    val showUpcomingInSidebar: Boolean = true
+    val showUpcomingInSidebar: Boolean = true,
+    val tvHomeEnabled: Boolean = true,
+    val tvHomeContinueWatchingChannelEnabled: Boolean = true,
+    val tvHomeUpcomingChannelEnabled: Boolean = true,
+    val tvHomeMoviesChannelEnabled: Boolean = true,
+    val tvHomeShowsChannelEnabled: Boolean = true,
+    val tvHomeNewEpisodesChannelEnabled: Boolean = true,
+    val tvHomeWatchNextEnabled: Boolean = true
 )
 
 data class CatalogInfo(
@@ -90,6 +97,13 @@ sealed class LayoutSettingsEvent {
     data class SetShowContinueWatchingOnHome(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetShowUpcomingOnHome(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetShowUpcomingInSidebar(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeContinueWatchingChannelEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeUpcomingChannelEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeMoviesChannelEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeShowsChannelEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeNewEpisodesChannelEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetTvHomeWatchNextEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data object ResetPosterCardStyle : LayoutSettingsEvent()
 }
 
@@ -268,6 +282,41 @@ class LayoutSettingsViewModel @Inject constructor(
                 updateUiStateIfChanged { it.copy(showUpcomingInSidebar = enabled) }
             }
         }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeContinueWatchingChannelEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeContinueWatchingChannelEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeUpcomingChannelEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeUpcomingChannelEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeMoviesChannelEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeMoviesChannelEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeShowsChannelEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeShowsChannelEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeNewEpisodesChannelEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeNewEpisodesChannelEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.tvHomeWatchNextEnabled.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(tvHomeWatchNextEnabled = enabled) }
+            }
+        }
         loadAvailableCatalogs()
     }
 
@@ -303,6 +352,19 @@ class LayoutSettingsViewModel @Inject constructor(
             is LayoutSettingsEvent.SetShowContinueWatchingOnHome -> setShowContinueWatchingOnHome(event.enabled)
             is LayoutSettingsEvent.SetShowUpcomingOnHome -> setShowUpcomingOnHome(event.enabled)
             is LayoutSettingsEvent.SetShowUpcomingInSidebar -> setShowUpcomingInSidebar(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeEnabled -> setTvHomeEnabled(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeContinueWatchingChannelEnabled ->
+                setTvHomeContinueWatchingChannelEnabled(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeUpcomingChannelEnabled ->
+                setTvHomeUpcomingChannelEnabled(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeMoviesChannelEnabled ->
+                setTvHomeMoviesChannelEnabled(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeShowsChannelEnabled ->
+                setTvHomeShowsChannelEnabled(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeNewEpisodesChannelEnabled ->
+                setTvHomeNewEpisodesChannelEnabled(event.enabled)
+            is LayoutSettingsEvent.SetTvHomeWatchNextEnabled ->
+                setTvHomeWatchNextEnabled(event.enabled)
             LayoutSettingsEvent.ResetPosterCardStyle -> resetPosterCardStyle()
         }
     }
@@ -514,6 +576,55 @@ class LayoutSettingsViewModel @Inject constructor(
         if (_uiState.value.showUpcomingInSidebar == enabled) return
         viewModelScope.launch {
             layoutPreferenceDataStore.setShowUpcomingInSidebar(enabled)
+        }
+    }
+
+    private fun setTvHomeEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeEnabled(enabled)
+        }
+    }
+
+    private fun setTvHomeContinueWatchingChannelEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeContinueWatchingChannelEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeContinueWatchingChannelEnabled(enabled)
+        }
+    }
+
+    private fun setTvHomeUpcomingChannelEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeUpcomingChannelEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeUpcomingChannelEnabled(enabled)
+        }
+    }
+
+    private fun setTvHomeMoviesChannelEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeMoviesChannelEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeMoviesChannelEnabled(enabled)
+        }
+    }
+
+    private fun setTvHomeShowsChannelEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeShowsChannelEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeShowsChannelEnabled(enabled)
+        }
+    }
+
+    private fun setTvHomeNewEpisodesChannelEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeNewEpisodesChannelEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeNewEpisodesChannelEnabled(enabled)
+        }
+    }
+
+    private fun setTvHomeWatchNextEnabled(enabled: Boolean) {
+        if (_uiState.value.tvHomeWatchNextEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setTvHomeWatchNextEnabled(enabled)
         }
     }
 
