@@ -78,6 +78,7 @@ fun LayoutSettingsScreen(
 private enum class LayoutSettingsSection {
     HOME_LAYOUT,
     HOME_CONTENT,
+    TV_HOME,
     DETAIL_PAGE,
     FOCUSED_POSTER,
     POSTER_CARD_STYLE
@@ -92,12 +93,14 @@ fun LayoutSettingsContent(
 
     var homeLayoutExpanded by rememberSaveable { mutableStateOf(false) }
     var homeContentExpanded by rememberSaveable { mutableStateOf(false) }
+    var tvHomeExpanded by rememberSaveable { mutableStateOf(false) }
     var detailPageExpanded by rememberSaveable { mutableStateOf(false) }
     var focusedPosterExpanded by rememberSaveable { mutableStateOf(false) }
     var posterCardStyleExpanded by rememberSaveable { mutableStateOf(false) }
 
     val defaultHomeLayoutHeaderFocus = remember { FocusRequester() }
     val homeContentHeaderFocus = remember { FocusRequester() }
+    val tvHomeHeaderFocus = remember { FocusRequester() }
     val detailPageHeaderFocus = remember { FocusRequester() }
     val focusedPosterHeaderFocus = remember { FocusRequester() }
     val posterCardStyleHeaderFocus = remember { FocusRequester() }
@@ -119,6 +122,11 @@ fun LayoutSettingsContent(
     LaunchedEffect(detailPageExpanded, focusedSection) {
         if (!detailPageExpanded && focusedSection == LayoutSettingsSection.DETAIL_PAGE) {
             detailPageHeaderFocus.requestFocus()
+        }
+    }
+    LaunchedEffect(tvHomeExpanded, focusedSection) {
+        if (!tvHomeExpanded && focusedSection == LayoutSettingsSection.TV_HOME) {
+            tvHomeHeaderFocus.requestFocus()
         }
     }
     LaunchedEffect(focusedPosterExpanded, focusedSection) {
@@ -431,6 +439,105 @@ fun LayoutSettingsContent(
                             )
                         },
                         onFocused = { focusedSection = LayoutSettingsSection.HOME_CONTENT }
+                    )
+                }
+            }
+
+            item(key = "tv_home_section") {
+                CollapsibleSectionCard(
+                    title = stringResource(R.string.layout_section_tv_home),
+                    description = stringResource(R.string.layout_section_tv_home_desc),
+                    expanded = tvHomeExpanded,
+                    onToggle = { tvHomeExpanded = !tvHomeExpanded },
+                    focusRequester = tvHomeHeaderFocus,
+                    onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                ) {
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_enabled),
+                        subtitle = stringResource(R.string.layout_tv_home_enabled_sub),
+                        checked = uiState.tvHomeEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeEnabled(!uiState.tvHomeEnabled)
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_watch_next),
+                        subtitle = stringResource(R.string.layout_tv_home_watch_next_sub),
+                        checked = uiState.tvHomeWatchNextEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeWatchNextEnabled(!uiState.tvHomeWatchNextEnabled)
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_continue_watching_channel),
+                        subtitle = stringResource(R.string.layout_tv_home_continue_watching_channel_sub),
+                        checked = uiState.tvHomeContinueWatchingChannelEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeContinueWatchingChannelEnabled(
+                                    !uiState.tvHomeContinueWatchingChannelEnabled
+                                )
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_upcoming_channel),
+                        subtitle = stringResource(R.string.layout_tv_home_upcoming_channel_sub),
+                        checked = uiState.tvHomeUpcomingChannelEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeUpcomingChannelEnabled(
+                                    !uiState.tvHomeUpcomingChannelEnabled
+                                )
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_movies_channel),
+                        subtitle = stringResource(R.string.layout_tv_home_movies_channel_sub),
+                        checked = uiState.tvHomeMoviesChannelEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeMoviesChannelEnabled(
+                                    !uiState.tvHomeMoviesChannelEnabled
+                                )
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_shows_channel),
+                        subtitle = stringResource(R.string.layout_tv_home_shows_channel_sub),
+                        checked = uiState.tvHomeShowsChannelEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeShowsChannelEnabled(
+                                    !uiState.tvHomeShowsChannelEnabled
+                                )
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
+                    )
+                    CompactToggleRow(
+                        title = stringResource(R.string.layout_tv_home_new_episodes_channel),
+                        subtitle = stringResource(R.string.layout_tv_home_new_episodes_channel_sub),
+                        checked = uiState.tvHomeNewEpisodesChannelEnabled,
+                        onToggle = {
+                            viewModel.onEvent(
+                                LayoutSettingsEvent.SetTvHomeNewEpisodesChannelEnabled(
+                                    !uiState.tvHomeNewEpisodesChannelEnabled
+                                )
+                            )
+                        },
+                        onFocused = { focusedSection = LayoutSettingsSection.TV_HOME }
                     )
                 }
             }

@@ -132,6 +132,7 @@ import com.nuvio.tv.ui.theme.NuvioColors
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.updater.UpdateViewModel
 import com.nuvio.tv.updater.ui.UpdatePromptDialog
+import com.nuvio.tv.tvhome.TvHomePublisher
 import com.nuvio.tv.tvhome.TvHomeStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import dev.chrisbanes.haze.HazeState
@@ -205,6 +206,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var tvHomeStateStore: TvHomeStateStore
+
+    @Inject
+    lateinit var tvHomePublisher: TvHomePublisher
 
     private lateinit var jankStats: JankStats
     private var pendingDeepLinkUri by mutableStateOf<Uri?>(null)
@@ -605,20 +609,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        requestPendingBrowsableChannel()
+        requestPendingBrowsableChannels()
+        tvHomePublisher.requestRefresh(force = false)
         profileSettingsSyncService.requestForegroundPull()
     }
 
-    private fun requestPendingBrowsableChannel() {
-        val channelId = tvHomeStateStore.consumePendingBrowsableChannelId() ?: return
-        runCatching {
-            startActivity(
-                Intent(TvContractCompat.ACTION_REQUEST_CHANNEL_BROWSABLE).apply {
-                    putExtra(TvContractCompat.EXTRA_CHANNEL_ID, channelId)
-                }
-            )
-        }.onFailure {
-            Log.w("MainActivity", "Failed to request browsable channel $channelId: ${it.message}")
+    private fun requestPendingBrowsableChannels() {
+        tvHomeStateStore.consumePendingBrowsableChannelIds().forEach { channelId ->
+            runCatching {
+                startActivity(
+                    Intent(TvContractCompat.ACTION_REQUEST_CHANNEL_BROWSABLE).apply {
+                        putExtra(TvContractCompat.EXTRA_CHANNEL_ID, channelId)
+                    }
+                )
+            }.onFailure {
+                Log.w("MainActivity", "Failed to request browsable channel $channelId: ${it.message}")
+            }
         }
     }
 }
@@ -1486,6 +1492,35 @@ private fun handleAppDeepLink(
                     itemId = itemId,
                     itemType = itemType,
                     addonBaseUrl = uri.getQueryParameter("addonBaseUrl")
+                )
+            ) {
+                launchSingleTop = true
+            }
+            true
+        }
+        "stream" -> {
+            val videoId = uri.getQueryParameter("videoId").orEmpty()
+            val contentType = uri.getQueryParameter("contentType").orEmpty()
+            val title = uri.getQueryParameter("title").orEmpty()
+            if (videoId.isBlank() || contentType.isBlank() || title.isBlank()) {
+                return false
+            }
+            navController.navigate(
+                Screen.Stream.createRoute(
+                    videoId = videoId,
+                    contentType = contentType,
+                    title = title,
+                    poster = uri.getQueryParameter("poster"),
+                    backdrop = uri.getQueryParameter("backdrop"),
+                    logo = uri.getQueryParameter("logo"),
+                    season = uri.getQueryParameter("season")?.toIntOrNull(),
+                    episode = uri.getQueryParameter("episode")?.toIntOrNull(),
+                    episodeName = uri.getQueryParameter("episodeName"),
+                    genres = uri.getQueryParameter("genres"),
+                    year = uri.getQueryParameter("year"),
+                    contentId = uri.getQueryParameter("contentId"),
+                    contentName = uri.getQueryParameter("contentName"),
+                    returnToHomeOnBack = uri.getQueryParameter("returnToHomeOnBack") == "true"
                 )
             ) {
                 launchSingleTop = true

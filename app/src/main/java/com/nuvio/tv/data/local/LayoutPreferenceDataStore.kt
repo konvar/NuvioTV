@@ -69,6 +69,19 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val showContinueWatchingOnHomeKey = booleanPreferencesKey("show_continue_watching_on_home")
     private val showUpcomingOnHomeKey = booleanPreferencesKey("show_upcoming_on_home")
     private val showUpcomingInSidebarKey = booleanPreferencesKey("show_upcoming_in_sidebar")
+    private val tvHomeEnabledKey = booleanPreferencesKey("tv_home_enabled")
+    private val tvHomeContinueWatchingChannelEnabledKey =
+        booleanPreferencesKey("tv_home_continue_watching_channel_enabled")
+    private val tvHomeUpcomingChannelEnabledKey =
+        booleanPreferencesKey("tv_home_upcoming_channel_enabled")
+    private val tvHomeMoviesChannelEnabledKey =
+        booleanPreferencesKey("tv_home_movies_channel_enabled")
+    private val tvHomeShowsChannelEnabledKey =
+        booleanPreferencesKey("tv_home_shows_channel_enabled")
+    private val tvHomeNewEpisodesChannelEnabledKey =
+        booleanPreferencesKey("tv_home_new_episodes_channel_enabled")
+    private val tvHomeWatchNextEnabledKey =
+        booleanPreferencesKey("tv_home_watch_next_enabled")
 
     private fun <T> profileFlow(extract: (prefs: androidx.datastore.preferences.core.Preferences) -> T): Flow<T> =
         profileManager.activeProfileId.flatMapLatest { pid ->
@@ -231,6 +244,34 @@ class LayoutPreferenceDataStore @Inject constructor(
 
     val showUpcomingInSidebar: Flow<Boolean> = profileFlow { prefs ->
         prefs[showUpcomingInSidebarKey] ?: true
+    }
+
+    val tvHomeEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeEnabledKey] ?: true
+    }
+
+    val tvHomeContinueWatchingChannelEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeContinueWatchingChannelEnabledKey] ?: true
+    }
+
+    val tvHomeUpcomingChannelEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeUpcomingChannelEnabledKey] ?: true
+    }
+
+    val tvHomeMoviesChannelEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeMoviesChannelEnabledKey] ?: true
+    }
+
+    val tvHomeShowsChannelEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeShowsChannelEnabledKey] ?: true
+    }
+
+    val tvHomeNewEpisodesChannelEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeNewEpisodesChannelEnabledKey] ?: true
+    }
+
+    val tvHomeWatchNextEnabled: Flow<Boolean> = profileFlow { prefs ->
+        prefs[tvHomeWatchNextEnabledKey] ?: true
     }
 
     suspend fun setLayout(layout: HomeLayout) {
@@ -463,6 +504,48 @@ class LayoutPreferenceDataStore @Inject constructor(
     suspend fun setShowUpcomingInSidebar(enabled: Boolean) {
         store().edit { prefs ->
             prefs[showUpcomingInSidebarKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeContinueWatchingChannelEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeContinueWatchingChannelEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeUpcomingChannelEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeUpcomingChannelEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeMoviesChannelEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeMoviesChannelEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeShowsChannelEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeShowsChannelEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeNewEpisodesChannelEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeNewEpisodesChannelEnabledKey] = enabled
+        }
+    }
+
+    suspend fun setTvHomeWatchNextEnabled(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[tvHomeWatchNextEnabledKey] = enabled
         }
     }
 
