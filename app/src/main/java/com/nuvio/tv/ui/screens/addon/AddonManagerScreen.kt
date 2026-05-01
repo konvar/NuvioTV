@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -39,11 +38,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -103,6 +102,7 @@ fun AddonManagerScreen(
     onNavigateToCollections: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val webConfigMode = viewModel.webConfigMode
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -114,6 +114,28 @@ fun AddonManagerScreen(
     val hasHomeVisibleCatalogs = remember(uiState.installedAddons) {
         uiState.installedAddons.any { addon ->
             addon.catalogs.any { catalog -> !catalog.isSearchOnlyCatalog() }
+        }
+    }
+    val manageFromPhoneSubtitle = if (webConfigMode == com.nuvio.tv.core.server.AddonWebConfigMode.COLLECTIONS_ONLY) {
+        stringResource(R.string.addon_manage_collections_from_phone_subtitle)
+    } else {
+        stringResource(R.string.addon_manage_from_phone_subtitle)
+    }
+    val qrInstruction = if (webConfigMode == com.nuvio.tv.core.server.AddonWebConfigMode.COLLECTIONS_ONLY) {
+        stringResource(R.string.addon_qr_collections_scan_instruction)
+    } else {
+        stringResource(R.string.addon_qr_scan_instruction)
+    }
+
+    val defaultRefreshAddonsSubtitle = "Pull latest addon changes for current profile."
+    var refreshAddonsSubtitle by remember {
+        mutableStateOf(defaultRefreshAddonsSubtitle)
+    }
+
+    LaunchedEffect(refreshAddonsSubtitle) {
+        if (refreshAddonsSubtitle != defaultRefreshAddonsSubtitle) {
+            delay(5_000)
+            refreshAddonsSubtitle = defaultRefreshAddonsSubtitle
         }
     }
 
@@ -320,20 +342,33 @@ fun AddonManagerScreen(
                     }
                 }
 
-                // Manage from phone card
-                item {
-                    ManageFromPhoneCard(onClick = viewModel::startQrMode)
-                }
+            }
 
-                if (hasHomeVisibleCatalogs) {
-                    item {
-                        CatalogOrderEntryCard(onClick = onNavigateToCatalogOrder)
+            item {
+                ManageFromPhoneCard(
+                    subtitle = manageFromPhoneSubtitle,
+                    onClick = viewModel::startQrMode
+                )
+            }
+
+            if (!viewModel.isReadOnly && hasHomeVisibleCatalogs) {
+                item {
+                    CatalogOrderEntryCard(onClick = onNavigateToCatalogOrder)
+                }
+            }
+
+            item {
+                CollectionsEntryCard(onClick = onNavigateToCollections)
+            }
+
+            item {
+                RefreshAddonsEntryCard(
+                    subtitle = refreshAddonsSubtitle,
+                    onClick = {
+                        viewModel.requestAddonSyncNow()
+                        refreshAddonsSubtitle = "Addons refreshed just now."
                     }
-                }
-
-                item {
-                    CollectionsEntryCard(onClick = onNavigateToCollections)
-                }
+                )
             }
 
             item {
@@ -385,6 +420,7 @@ fun AddonManagerScreen(
                 QrCodeOverlay(
                     qrBitmap = uiState.qrCodeBitmap,
                     serverUrl = uiState.serverUrl,
+                    instruction = qrInstruction,
                     onClose = viewModel::stopQrMode,
                     hasPendingChange = uiState.pendingChange != null
                 )
@@ -463,7 +499,10 @@ private fun AddonMessageOverlay(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun ManageFromPhoneCard(onClick: () -> Unit) {
+private fun ManageFromPhoneCard(
+    subtitle: String,
+    onClick: () -> Unit
+) {
     var isFocused by remember { mutableStateOf(false) }
 
     Surface(
@@ -506,7 +545,7 @@ private fun ManageFromPhoneCard(onClick: () -> Unit) {
                         color = NuvioColors.TextPrimary
                     )
                     Text(
-                        text = stringResource(R.string.addon_manage_from_phone_subtitle),
+                        text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = NuvioColors.TextSecondary
                     )
@@ -574,7 +613,7 @@ private fun CatalogOrderEntryCard(onClick: () -> Unit) {
                 }
             }
             Icon(
-                imageVector = Icons.Default.ArrowDownward,
+                imageVector = Icons.Default.ArrowForward,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = NuvioColors.TextSecondary
@@ -623,12 +662,12 @@ private fun CollectionsEntryCard(onClick: () -> Unit) {
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = "Collections",
+                        text = stringResource(R.string.collections_card_title),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = NuvioColors.TextPrimary
                     )
                     Text(
-                        text = "Group catalogs into folders on your home screen",
+                        text = stringResource(R.string.collections_card_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = NuvioColors.TextSecondary
                     )
@@ -646,9 +685,74 @@ private fun CollectionsEntryCard(onClick: () -> Unit) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
+private fun RefreshAddonsEntryCard(
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused },
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = NuvioColors.BackgroundCard,
+            focusedContainerColor = NuvioColors.FocusBackground
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, NuvioColors.FocusRing),
+                shape = RoundedCornerShape(18.dp)
+            )
+        ),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(18.dp)),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (isFocused) NuvioColors.Secondary else NuvioColors.TextSecondary
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = "Refresh Addons",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = NuvioColors.TextPrimary
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NuvioColors.TextSecondary
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = NuvioColors.TextSecondary
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
 private fun QrCodeOverlay(
     qrBitmap: Bitmap?,
     serverUrl: String?,
+    instruction: String,
     onClose: () -> Unit,
     hasPendingChange: Boolean = false
 ) {
@@ -672,7 +776,7 @@ private fun QrCodeOverlay(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = stringResource(R.string.addon_qr_scan_instruction),
+                text = instruction,
                 style = MaterialTheme.typography.bodyMedium,
                 color = NuvioColors.TextSecondary,
                 textAlign = TextAlign.Center

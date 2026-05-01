@@ -18,11 +18,13 @@ import com.nuvio.tv.R
 import com.nuvio.tv.ui.components.formatContinueWatchingProgressLabel
 
 internal val YEAR_REGEX = Regex("""\b(19|20)\d{2}\b""")
+internal val YEAR_RANGE_REGEX = Regex("""^((19|20)\d{2})\s*[-–]\s*((19|20)\d{2})?$""")
 internal const val MODERN_HERO_TEXT_WIDTH_FRACTION = 0.42f
 internal const val MODERN_HERO_MEDIA_WIDTH_FRACTION = 0.72f
 internal const val MODERN_TRAILER_OVERSCAN_ZOOM = 1.35f
 internal const val MODERN_HERO_FOCUS_DEBOUNCE_MS = 90L
 internal val MODERN_ROW_HEADER_FOCUS_INSET = 40.dp
+internal const val MODERN_CONTINUE_WATCHING_ROW_KEY = "continue_watching"
 internal val MODERN_LANDSCAPE_LOGO_GRADIENT = Brush.verticalGradient(
     colorStops = arrayOf(
         0.0f to Color.Transparent,
@@ -77,14 +79,18 @@ sealed class ModernPayload {
         val folderId: String,
         val posterShape: PosterShape,
         val focusGlowEnabled: Boolean,
-        val focusGifUrl: String?
+        val focusGifEnabled: Boolean,
+        val focusGifUrl: String?,
+        val heroBackdropUrl: String?,
+        val heroVideoUrl: String?,
+        val titleLogoUrl: String?
     ) : ModernPayload()
 }
 
 @Immutable
 internal data class FocusedCatalogSelection(
     val focusKey: String,
-    val payload: ModernPayload.Catalog
+    val payload: ModernPayload
 )
 
 @Immutable
@@ -148,6 +154,7 @@ internal data class ModernHeroSceneState(
     val trailerFirstFrameRendered: Boolean,
     val trailerUrl: String?,
     val trailerAudioUrl: String?,
+    val trailerPlaybackKey: String?,
     val trailerMuted: Boolean,
     val fullScreenBackdrop: Boolean
 )
@@ -156,6 +163,11 @@ internal data class ModernCatalogRowBuildCacheEntry(
     val source: CatalogRow,
     val useLandscapePosters: Boolean,
     val showCatalogTypeSuffix: Boolean,
+    val mappedRow: HeroCarouselRow
+)
+
+internal data class ModernCollectionRowBuildCacheEntry(
+    val source: Collection,
     val mappedRow: HeroCarouselRow
 )
 
@@ -173,16 +185,17 @@ internal class ModernHomeUiCaches {
 }
 
 @Stable
-internal class ModernCarouselRowBuildCache {
+class ModernCarouselRowBuildCache {
     var continueWatchingItems: List<ContinueWatchingItem> = emptyList()
     var continueWatchingTitle: String = ""
     var continueWatchingAirsDateTemplate: String = ""
     var continueWatchingUpcomingLabel: String = ""
     var continueWatchingUseLandscapePosters: Boolean = false
     var continueWatchingRow: HeroCarouselRow? = null
-    val catalogRows = mutableMapOf<String, ModernCatalogRowBuildCacheEntry>()
+    internal val catalogRows = mutableMapOf<String, ModernCatalogRowBuildCacheEntry>()
+    internal val collectionRows = mutableMapOf<String, ModernCollectionRowBuildCacheEntry>()
     // per-item cache: rowKey -> (itemId -> cached carousel item + source MetaPreview)
-    val catalogItemCache = mutableMapOf<String, MutableMap<String, CachedCarouselItem>>()
+    internal val catalogItemCache = mutableMapOf<String, MutableMap<String, CachedCarouselItem>>()
 }
 
 internal data class CachedCarouselItem(
@@ -205,7 +218,9 @@ internal fun ModernCarouselItem.catalogCardMetrics(
     landscapeCardWidth: androidx.compose.ui.unit.Dp,
     landscapeCardHeight: androidx.compose.ui.unit.Dp
 ): ModernCatalogCardMetrics {
-    if (useLandscapePosters) {
+    // Collection folders define their own tile shape — never override with
+    // the global landscape-posters toggle.
+    if (useLandscapePosters && payload !is ModernPayload.CollectionFolder) {
         return ModernCatalogCardMetrics(
             width = landscapeCardWidth,
             height = landscapeCardHeight
@@ -274,7 +289,13 @@ internal fun buildContinueWatchingItem(
     val heroPreview = when (item) {
         is ContinueWatchingItem.InProgress -> {
             val isSeries = isSeriesType(item.progress.contentType)
-            val episodeCode = item.progress.episodeDisplayString
+            val s = item.progress.season
+            val e = item.progress.episode
+            val episodeCode = if (s != null && e != null) {
+                context.getString(R.string.season_episode_format, s, e)
+            } else {
+                null
+            }
             val episodeTitle = item.progress.episodeTitle?.takeIf { it.isNotBlank() }?.localizeEpisodeTitle(context)
             val episodeLabel = when {
                 isSeries && episodeCode != null && episodeTitle != null -> "$episodeCode · $episodeTitle"
@@ -288,7 +309,7 @@ internal fun buildContinueWatchingItem(
                 description = item.episodeDescription ?: item.progress.episodeTitle?.localizeEpisodeTitle(context),
                 contentTypeText = episodeLabel,
                 isSeries = isSeries,
-                yearText = extractYear(item.releaseInfo),
+                yearText = extractYearOrRange(item.releaseInfo),
                 secondaryHighlightText = secondaryHighlightText,
                 imdbText = item.episodeImdbRating?.let { String.format("%.1f", it) },
                 genres = item.genres,
@@ -302,7 +323,11 @@ internal fun buildContinueWatchingItem(
             )
         }
         is ContinueWatchingItem.NextUp -> {
-            val episodeCode = "S${item.info.season}E${item.info.episode}"
+            val episodeCode = context.getString(
+                R.string.season_episode_format,
+                item.info.season,
+                item.info.episode
+            )
             val episodeTitle = item.info.episodeTitle?.takeIf { it.isNotBlank() }?.localizeEpisodeTitle(context)
             val episodeLabel = if (episodeTitle != null) "$episodeCode · $episodeTitle" else episodeCode
             HeroPreview(
@@ -313,7 +338,7 @@ internal fun buildContinueWatchingItem(
                     ?: item.info.airDateLabel?.let { airsDateTemplate.format(it) },
                 contentTypeText = episodeLabel,
                 isSeries = true,
-                yearText = extractYear(item.info.releaseInfo),
+                yearText = extractYearOrRange(item.info.releaseInfo),
                 secondaryHighlightText = secondaryHighlightText,
                 imdbText = item.info.imdbRating?.let { String.format("%.1f", it) },
                 genres = item.info.genres,
@@ -360,9 +385,21 @@ internal fun buildContinueWatchingItem(
             is ContinueWatchingItem.NextUp -> item.info.name
         },
         subtitle = when (item) {
-            is ContinueWatchingItem.InProgress -> item.progress.episodeDisplayString ?: item.progress.episodeTitle
+            is ContinueWatchingItem.InProgress -> {
+                val ps = item.progress.season
+                val pe = item.progress.episode
+                if (ps != null && pe != null) {
+                    context.getString(R.string.season_episode_format, ps, pe)
+                } else {
+                    item.progress.episodeTitle
+                }
+            }
             is ContinueWatchingItem.NextUp -> {
-                val code = "S${item.info.season}E${item.info.episode}"
+                val code = context.getString(
+                    R.string.season_episode_format,
+                    item.info.season,
+                    item.info.episode
+                )
                 if (item.info.hasAired) {
                     code
                 } else {
@@ -456,7 +493,6 @@ internal fun buildCatalogItem(
 internal fun buildCollectionFolderItem(
     collection: Collection,
     folder: CollectionFolder,
-    useLandscapePosters: Boolean,
     occurrence: Int = 0
 ): ModernCarouselItem {
     val title = if (!folder.coverEmoji.isNullOrBlank()) {
@@ -465,28 +501,24 @@ internal fun buildCollectionFolderItem(
         folder.title
     }
     val imageUrl = firstNonBlank(folder.coverImageUrl, collection.backdropImageUrl)
-    val heroImageUrl = if (useLandscapePosters) {
-        firstNonBlank(folder.coverImageUrl, collection.backdropImageUrl)
-    } else {
-        imageUrl
-    }
+    val heroBackdrop = firstNonBlank(folder.heroBackdropUrl, folder.coverImageUrl, collection.backdropImageUrl)
 
     return ModernCarouselItem(
         key = "collection_${collection.id}_${folder.id}_$occurrence",
-        title = folder.title,
-        subtitle = collection.title,
-        imageUrl = heroImageUrl,
+        title = if (folder.hideTitle) "" else folder.title,
+        subtitle = if (folder.hideTitle) null else collection.title,
+        imageUrl = imageUrl,
         heroPreview = HeroPreview(
-            title = title,
-            logo = null,
+            title = if (folder.hideTitle) "" else title,
+            logo = folder.titleLogoUrl,
             description = null,
-            contentTypeText = collection.title,
+            contentTypeText = null,
             yearText = null,
             imdbText = null,
             genres = emptyList(),
             poster = imageUrl,
-            backdrop = firstNonBlank(folder.coverImageUrl, collection.backdropImageUrl),
-            imageUrl = heroImageUrl
+            backdrop = heroBackdrop,
+            imageUrl = imageUrl
         ),
         payload = ModernPayload.CollectionFolder(
             focusKey = "collection_${collection.id}::${folder.id}",
@@ -495,7 +527,11 @@ internal fun buildCollectionFolderItem(
             folderId = folder.id,
             posterShape = folder.tileShape,
             focusGlowEnabled = collection.focusGlowEnabled,
-            focusGifUrl = folder.focusGifUrl
+            focusGifEnabled = folder.focusGifEnabled,
+            focusGifUrl = folder.focusGifUrl,
+            heroBackdropUrl = folder.heroBackdropUrl,
+            heroVideoUrl = folder.heroVideoUrl,
+            titleLogoUrl = folder.titleLogoUrl
         )
     )
 }
@@ -546,26 +582,55 @@ internal fun extractYear(releaseInfo: String?): String? {
     return YEAR_REGEX.find(releaseInfo)?.value
 }
 
+internal fun extractYearOrRange(releaseInfo: String?): String? {
+    if (releaseInfo.isNullOrBlank()) return null
+    val trimmed = releaseInfo.trim()
+    val match = YEAR_RANGE_REGEX.find(trimmed)
+    if (match != null) {
+        val startYear = match.groupValues[1]
+        val endYear = match.groupValues[3]
+        // "2022-2025" → "2022–2025", but "2024-" → "2024"
+        return if (endYear.isNotBlank()) "$startYear–$endYear" else startYear
+    }
+    return YEAR_REGEX.find(trimmed)?.value
+}
+
+@Volatile
+private var cachedDateFormatLocale: java.util.Locale? = null
+@Volatile
+private var cachedDateFormat: java.text.SimpleDateFormat? = null
+
 internal fun extractYearText(type: ContentType, releaseInfo: String?, released: String?, showFullDate: Boolean = true): String? {
     if (showFullDate && type == ContentType.MOVIE) {
         val full = released
             ?.let { runCatching { java.time.OffsetDateTime.parse(it).toLocalDate() }.getOrNull() }
             ?.let {
                 val locale = java.util.Locale.getDefault()
-                val pattern = android.text.format.DateFormat.getBestDateTimePattern(locale, "dMMMMy")
-                java.text.SimpleDateFormat(pattern, locale).format(
+                val fmt = if (locale == cachedDateFormatLocale && cachedDateFormat != null) {
+                    cachedDateFormat!!
+                } else {
+                    val pattern = android.text.format.DateFormat.getBestDateTimePattern(locale, "dMMMMy")
+                    java.text.SimpleDateFormat(pattern, locale).also {
+                        cachedDateFormat = it
+                        cachedDateFormatLocale = locale
+                    }
+                }
+                fmt.format(
                     java.util.Date(it.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
                 )
             }
         if (full != null) return full
     }
-    return extractYear(releaseInfo)
+    return extractYearOrRange(releaseInfo)
 }
+
+private val HOURS_REGEX = "(\\d+)\\s*h".toRegex()
+private val MINUTES_REGEX = "(\\d+)\\s*m(?:in)?".toRegex()
 
 private fun formatHeroRuntime(runtime: String?): String? {
     val normalized = runtime?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
-    val hours = "(\\d+)\\s*h".toRegex().find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
-    val minutes = "(\\d+)\\s*m(?:in)?".toRegex().find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
+    val hours = HOURS_REGEX.find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
+    val minutes = MINUTES_REGEX.find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
     val totalMinutes = when {
         hours != null || minutes != null -> (hours ?: 0) * 60 + (minutes ?: 0)
         else -> normalized.filter(Char::isDigit).toIntOrNull()

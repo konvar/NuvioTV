@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import com.nuvio.tv.ui.util.dpadRepeatThrottle
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,20 +48,25 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Tab
 import androidx.tv.material3.TabRow
 import androidx.tv.material3.Text
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.nuvio.tv.domain.model.FolderViewMode
 import com.nuvio.tv.domain.model.HomeLayout
 import com.nuvio.tv.ui.components.CatalogRowSection
 import com.nuvio.tv.ui.components.ContentCard
 import com.nuvio.tv.ui.components.LoadingIndicator
+import com.nuvio.tv.R
+import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.ui.components.PosterCardDefaults
 import com.nuvio.tv.ui.components.PosterCardStyle
 import com.nuvio.tv.ui.screens.home.ClassicHomeContent
 import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
 import com.nuvio.tv.ui.screens.home.GridHomeContent
 import com.nuvio.tv.ui.screens.home.HomeScreenFocusState
+import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.screens.home.ModernHomeContent
 import com.nuvio.tv.ui.theme.NuvioColors
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @OptIn(ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -89,13 +95,29 @@ fun FolderDetailScreen(
         return
     }
 
+    val isItemWatched: (MetaPreview) -> Boolean = remember(uiState.movieWatchedStatus) {
+        { item -> uiState.movieWatchedStatus[com.nuvio.tv.ui.screens.home.homeItemStatusKey(item.id, item.apiType)] == true }
+    }
+
+    val enrichingItemId by viewModel.enrichingItemId.collectAsStateWithLifecycle()
+    val enrichedPreviews by viewModel.enrichedPreviews.collectAsStateWithLifecycle()
+    val trailerPreviewUrls by viewModel.trailerPreviewUrls.collectAsStateWithLifecycle()
+    val trailerPreviewAudioUrls by viewModel.trailerPreviewAudioUrls.collectAsStateWithLifecycle()
+
     if (uiState.viewMode == FolderViewMode.FOLLOW_LAYOUT) {
         FollowLayoutContent(
             uiState = uiState,
             focusState = followLayoutFocusState,
+            enrichingItemId = enrichingItemId,
+            enrichedPreviews = enrichedPreviews,
             onNavigateToDetail = onNavigateToDetail,
+            onLoadMoreCatalog = viewModel::loadMoreForCatalog,
             onSaveFocusState = viewModel::saveFollowLayoutFocusState,
-            onSaveGridFocusState = viewModel::saveFollowLayoutGridFocusState
+            onSaveGridFocusState = viewModel::saveFollowLayoutGridFocusState,
+            onItemFocus = viewModel::onItemFocused,
+            trailerPreviewUrls = trailerPreviewUrls,
+            trailerPreviewAudioUrls = trailerPreviewAudioUrls,
+            onRequestTrailerPreview = viewModel::requestTrailerPreview
         )
     } else {
         Column(
@@ -110,6 +132,8 @@ fun FolderDetailScreen(
                     tabFocusState = tabFocusStates[uiState.selectedTabIndex] ?: FolderDetailGridFocusState(),
                     onSelectTab = viewModel::selectTab,
                     onNavigateToDetail = onNavigateToDetail,
+                    isItemWatched = isItemWatched,
+                    onLoadMore = { viewModel.loadMoreItems(uiState.selectedTabIndex) },
                     onSaveFocusState = { verticalIndex, verticalOffset, focusedItemKey ->
                         viewModel.saveTabFocusState(
                             tabIndex = uiState.selectedTabIndex,
@@ -117,6 +141,9 @@ fun FolderDetailScreen(
                             verticalScrollOffset = verticalOffset,
                             focusedItemKey = focusedItemKey
                         )
+                    },
+                    onItemLongPress = { item, addonBaseUrl ->
+                        viewModel.posterOptions.show(item, addonBaseUrl)
                     }
                 )
                 FolderViewMode.ROWS -> {
@@ -125,13 +152,28 @@ fun FolderDetailScreen(
                         uiState = uiState,
                         focusState = rowsFocusState,
                         onNavigateToDetail = onNavigateToDetail,
-                        onSaveFocusState = viewModel::saveRowsFocusState
+                        isItemWatched = isItemWatched,
+                        onLoadMoreCatalog = viewModel::loadMoreForCatalog,
+                        onSaveFocusState = viewModel::saveRowsFocusState,
+                        onItemFocus = viewModel::onItemFocused,
+                        onItemLongPress = { item, addonBaseUrl ->
+                            viewModel.posterOptions.show(item, addonBaseUrl)
+                        }
                     )
                 }
                 FolderViewMode.FOLLOW_LAYOUT -> {} // handled above
             }
         }
     }
+
+    val posterOptionsState by viewModel.posterOptions.state.collectAsStateWithLifecycle()
+    com.nuvio.tv.ui.components.posteroptions.PosterOptionsHost(
+        state = posterOptionsState,
+        controller = viewModel.posterOptions,
+        onNavigateToDetail = { id, type, addonBaseUrl ->
+            onNavigateToDetail(id, type, addonBaseUrl)
+        }
+    )
 }
 
 @Composable
@@ -144,12 +186,19 @@ private fun FolderHeader(folder: com.nuvio.tv.domain.model.CollectionFolder) {
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         if (!folder.coverImageUrl.isNullOrBlank()) {
+            val iconWidth: androidx.compose.ui.unit.Dp
+            val iconHeight: androidx.compose.ui.unit.Dp
+            when (folder.tileShape) {
+                com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = 32.dp; iconHeight = 48.dp }
+                com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }
+                com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = 48.dp; iconHeight = 48.dp }
+            }
             AsyncImage(
                 model = folder.coverImageUrl,
                 contentDescription = folder.title,
                 modifier = Modifier
-                    .width(48.dp)
-                    .height(48.dp)
+                    .width(iconWidth)
+                    .height(iconHeight)
                     .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.FillBounds
             )
@@ -177,7 +226,10 @@ private fun TabbedGridContent(
     tabFocusState: FolderDetailGridFocusState,
     onSelectTab: (Int) -> Unit,
     onNavigateToDetail: (String, String, String) -> Unit,
-    onSaveFocusState: (Int, Int, String?) -> Unit
+    onSaveFocusState: (Int, Int, String?) -> Unit,
+    onLoadMore: () -> Unit = {},
+    isItemWatched: (MetaPreview) -> Boolean = { false },
+    onItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> }
 ) {
     val tabFocusRequesters = remember(uiState.tabs.size) { uiState.tabs.indices.map { FocusRequester() } }
 
@@ -189,12 +241,19 @@ private fun TabbedGridContent(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (!folder.coverImageUrl.isNullOrBlank()) {
+            val iconWidth: androidx.compose.ui.unit.Dp
+            val iconHeight: androidx.compose.ui.unit.Dp
+            when (folder.tileShape) {
+                com.nuvio.tv.domain.model.PosterShape.POSTER -> { iconWidth = 32.dp; iconHeight = 48.dp }
+                com.nuvio.tv.domain.model.PosterShape.LANDSCAPE -> { iconWidth = 64.dp; iconHeight = 36.dp }
+                com.nuvio.tv.domain.model.PosterShape.SQUARE -> { iconWidth = 48.dp; iconHeight = 48.dp }
+            }
             AsyncImage(
                 model = folder.coverImageUrl,
                 contentDescription = folder.title,
                 modifier = Modifier
-                    .width(48.dp)
-                    .height(48.dp)
+                    .width(iconWidth)
+                    .height(iconHeight)
                     .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.FillBounds
             )
@@ -235,12 +294,18 @@ private fun TabbedGridContent(
                             horizontalAlignment = Alignment.Start
                         ) {
                             Text(
-                                text = tab.label,
+                                text = if (tab.isAllTab) stringResource(R.string.collections_tab_all) else tab.label,
                                 style = MaterialTheme.typography.labelLarge
                             )
                             if (tab.typeLabel.isNotBlank()) {
+                                val localizedType = when {
+                                    tab.isAllTab -> stringResource(R.string.collections_tab_combined)
+                                    tab.rawType.lowercase() == "movie" -> stringResource(R.string.type_movie)
+                                    tab.rawType.lowercase() == "series" -> stringResource(R.string.type_series)
+                                    else -> tab.typeLabel
+                                }
                                 Text(
-                                    text = tab.typeLabel,
+                                    text = localizedType,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = NuvioColors.TextTertiary
                                 )
@@ -317,6 +382,23 @@ private fun TabbedGridContent(
                 }
             }
 
+            val catalogRow = currentTab.catalogRow
+            LaunchedEffect(gridState, items.size) {
+                snapshotFlow {
+                    val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    val total = gridState.layoutInfo.totalItemsCount
+                    lastVisible to total
+                }
+                    .distinctUntilChanged()
+                    .collect { (lastVisible, total) ->
+                        if (total > 0 && lastVisible >= total - 10) {
+                            if (catalogRow != null && catalogRow.hasMore && !catalogRow.isLoading) {
+                                onLoadMore()
+                            }
+                        }
+                    }
+            }
+
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(minSize = posterCardStyle.width),
@@ -324,7 +406,8 @@ private fun TabbedGridContent(
                     .fillMaxSize()
                     .focusRestorer {
                         lastFocusedItemKey?.let { itemFocusRequesters[it] } ?: FocusRequester.Default
-                    },
+                    }
+                    .dpadRepeatThrottle(),
                 contentPadding = PaddingValues(
                     start = 48.dp,
                     end = 48.dp,
@@ -344,6 +427,7 @@ private fun TabbedGridContent(
                         item = item,
                         posterCardStyle = posterCardStyle,
                         focusRequester = focusReq,
+                        isWatched = isItemWatched(item),
                         onFocus = { _ -> lastFocusedItemKey = itemKey },
                         onClick = {
                             onNavigateToDetail(
@@ -351,8 +435,26 @@ private fun TabbedGridContent(
                                 item.apiType,
                                 currentTab.catalogRow.addonBaseUrl
                             )
+                        },
+                        onLongPress = {
+                            lastFocusedItemKey = itemKey
+                            onItemLongPress(item, currentTab.catalogRow.addonBaseUrl)
                         }
                     )
+                }
+                if (catalogRow != null && catalogRow.isLoading) {
+                    item(
+                        span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator()
+                        }
+                    }
                 }
             }
         }
@@ -365,7 +467,11 @@ private fun RowsContent(
     uiState: FolderDetailUiState,
     focusState: HomeScreenFocusState,
     onNavigateToDetail: (String, String, String) -> Unit,
-    onSaveFocusState: (Int, Int, Int, Int, Map<String, Int>) -> Unit
+    onLoadMoreCatalog: (String, String, String) -> Unit = { _, _, _ -> },
+    onSaveFocusState: (Int, Int, Int, Int, Map<String, Int>) -> Unit,
+    isItemWatched: (MetaPreview) -> Boolean = { false },
+    onItemFocus: (MetaPreview) -> Unit = {},
+    onItemLongPress: (MetaPreview, String) -> Unit = { _, _ -> }
 ) {
     val sourceTabs = uiState.tabs.filter { !it.isAllTab }
     val columnListState = rememberLazyListState(
@@ -373,6 +479,7 @@ private fun RowsContent(
         initialFirstVisibleItemScrollOffset = focusState.verticalScrollOffset
     )
     val rowStates = remember { mutableMapOf<String, LazyListState>() }
+    val rowFocusedItemIndex = remember { mutableMapOf<String, Int>() }
     val currentFocusedRowIndex = remember { intArrayOf(focusState.focusedRowIndex) }
     val currentFocusedItemIndex = remember { intArrayOf(focusState.focusedItemIndex) }
 
@@ -401,6 +508,10 @@ private fun RowsContent(
         }
     }
 
+    val strTypeMovie = stringResource(R.string.type_movie)
+    val strTypeSeries = stringResource(R.string.type_series)
+    val loadMoreLabel = stringResource(R.string.action_load_more)
+
     LazyColumn(
         state = columnListState,
         modifier = Modifier.fillMaxSize(),
@@ -409,11 +520,25 @@ private fun RowsContent(
     ) {
         sourceTabs.forEachIndexed { index, tab ->
             item(key = "row_${index}_${tab.label}") {
+                val localizedTypeLabel = remember(tab.rawType, strTypeMovie, strTypeSeries) {
+                    when (tab.rawType.lowercase()) {
+                        "movie" -> strTypeMovie
+                        "series" -> strTypeSeries
+                        else -> tab.rawType.replaceFirstChar { it.uppercase() }
+                    }
+                }
+                val rowTitle = remember(tab.label, localizedTypeLabel) {
+                    if (tab.label != tab.typeLabel && localizedTypeLabel.isNotEmpty()) {
+                        "${tab.label} - $localizedTypeLabel"
+                    } else {
+                        tab.label
+                    }
+                }
                 when {
                     tab.isLoading -> {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = tab.label,
+                                text = rowTitle,
                                 style = MaterialTheme.typography.headlineSmall,
                                 color = NuvioColors.TextPrimary,
                                 modifier = Modifier.padding(start = 48.dp, end = 48.dp, bottom = 12.dp)
@@ -431,7 +556,7 @@ private fun RowsContent(
                     tab.error != null -> {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = tab.label,
+                                text = rowTitle,
                                 style = MaterialTheme.typography.headlineSmall,
                                 color = NuvioColors.TextPrimary,
                                 modifier = Modifier.padding(start = 48.dp, end = 48.dp, bottom = 12.dp)
@@ -457,9 +582,21 @@ private fun RowsContent(
                         CatalogRowSection(
                             catalogRow = catalogRow,
                             onItemClick = onNavigateToDetail,
+                            onItemLongPress = onItemLongPress,
+                            onSeeAll = {
+                                onLoadMoreCatalog(
+                                    catalogRow.catalogId,
+                                    catalogRow.addonId,
+                                    catalogRow.apiType
+                                )
+                            },
+                            showSeeAll = catalogRow.hasMore && !catalogRow.isLoading,
+                            seeAllLabel = loadMoreLabel,
                             showPosterLabels = true,
                             showAddonName = false,
-                            showCatalogTypeSuffix = false,
+                            showCatalogTypeSuffix = true,
+                            isItemWatched = isItemWatched,
+                            onItemFocus = onItemFocus,
                             listState = listState,
                             focusedItemIndex = if (
                                 focusState.hasSavedFocus &&
@@ -469,9 +606,11 @@ private fun RowsContent(
                             } else {
                                 -1
                             },
+                            restorerFocusedIndex = -1,
                             onItemFocused = { itemIndex ->
                                 currentFocusedRowIndex[0] = index
                                 currentFocusedItemIndex[0] = itemIndex
+                                rowFocusedItemIndex[rowKey] = itemIndex
                             }
                         )
                     }
@@ -485,9 +624,16 @@ private fun RowsContent(
 private fun FollowLayoutContent(
     uiState: FolderDetailUiState,
     focusState: HomeScreenFocusState,
+    enrichingItemId: String? = null,
+    enrichedPreviews: Map<String, MetaPreview> = emptyMap(),
     onNavigateToDetail: (String, String, String) -> Unit,
+    onLoadMoreCatalog: (String, String, String) -> Unit = { _, _, _ -> },
     onSaveFocusState: (Int, Int, Int, Int, Map<String, Int>) -> Unit,
-    onSaveGridFocusState: (Int, Int, String?) -> Unit
+    onSaveGridFocusState: (Int, Int, String?) -> Unit,
+    onItemFocus: (MetaPreview) -> Unit = {},
+    trailerPreviewUrls: Map<String, String> = emptyMap(),
+    trailerPreviewAudioUrls: Map<String, String> = emptyMap(),
+    onRequestTrailerPreview: (String, String, String?, String) -> Unit = { _, _, _, _ -> }
 ) {
     val homeState = uiState.followLayoutHomeState
 
@@ -507,22 +653,30 @@ private fun FollowLayoutContent(
     }
     val noOpCwClick: (ContinueWatchingItem) -> Unit = remember { { } }
     val noOpRemoveCw: (String, Int?, Int?, Boolean) -> Unit = remember { { _, _, _, _ -> } }
-    val noOpSeeAll: (String, String, String) -> Unit = remember { { _, _, _ -> } }
     val noOpFolderDetail: (String, String) -> Unit = remember { { _, _ -> } }
+    val isItemWatched: (MetaPreview) -> Boolean = remember(homeState.movieWatchedStatus) {
+        { item -> homeState.movieWatchedStatus[com.nuvio.tv.ui.screens.home.homeItemStatusKey(item.id, item.apiType)] == true }
+    }
+    val loadMoreLabel = stringResource(R.string.action_load_more)
 
     when (uiState.homeLayout) {
         HomeLayout.CLASSIC -> ClassicHomeContent(
             uiState = homeState,
             posterCardStyle = posterCardStyle,
             focusState = focusState,
-            trailerPreviewUrls = emptyMap(),
-            trailerPreviewAudioUrls = emptyMap(),
+            trailerPreviewUrls = trailerPreviewUrls,
+            trailerPreviewAudioUrls = trailerPreviewAudioUrls,
             onNavigateToDetail = onNavigateToDetail,
             onContinueWatchingClick = noOpCwClick,
-            onNavigateToCatalogSeeAll = noOpSeeAll,
+            onNavigateToCatalogSeeAll = onLoadMoreCatalog,
             onNavigateToFolderDetail = noOpFolderDetail,
             onRemoveContinueWatching = noOpRemoveCw,
-            onRequestTrailerPreview = { },
+            isCatalogItemWatched = isItemWatched,
+            catalogSeeAllLabel = loadMoreLabel,
+            onRequestTrailerPreview = { item ->
+                onRequestTrailerPreview(item.id, item.name, item.releaseInfo, item.apiType)
+            },
+            onItemFocus = onItemFocus,
             onSaveFocusState = onSaveFocusState
         )
         HomeLayout.GRID -> GridHomeContent(
@@ -530,23 +684,29 @@ private fun FollowLayoutContent(
             gridFocusState = focusState,
             onNavigateToDetail = onNavigateToDetail,
             onContinueWatchingClick = noOpCwClick,
-            onNavigateToCatalogSeeAll = noOpSeeAll,
+            onNavigateToCatalogSeeAll = onLoadMoreCatalog,
             onNavigateToFolderDetail = noOpFolderDetail,
             onRemoveContinueWatching = noOpRemoveCw,
+            isCatalogItemWatched = isItemWatched,
+            catalogSeeAllLabel = loadMoreLabel,
             posterCardStyle = posterCardStyle,
             onSaveGridFocusState = onSaveGridFocusState
         )
         HomeLayout.MODERN -> ModernHomeContent(
             uiState = homeState,
             focusState = focusState,
-            trailerPreviewUrls = emptyMap(),
-            trailerPreviewAudioUrls = emptyMap(),
+            enrichingItemId = enrichingItemId,
+            enrichedPreviews = enrichedPreviews,
+            trailerPreviewUrls = trailerPreviewUrls,
+            trailerPreviewAudioUrls = trailerPreviewAudioUrls,
             onNavigateToDetail = onNavigateToDetail,
             onContinueWatchingClick = noOpCwClick,
-            onRequestTrailerPreview = { _, _, _, _ -> },
-            onLoadMoreCatalog = noOpSeeAll,
+            onRequestTrailerPreview = onRequestTrailerPreview,
+            onLoadMoreCatalog = onLoadMoreCatalog,
             onRemoveContinueWatching = noOpRemoveCw,
+            isCatalogItemWatched = isItemWatched,
             onNavigateToFolderDetail = noOpFolderDetail,
+            onItemFocus = onItemFocus,
             onSaveFocusState = onSaveFocusState
         )
     }

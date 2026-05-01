@@ -87,18 +87,41 @@ fun DiscoverScreen(
                 firstItemFocusRequester = discoverFirstItemFocusRequester,
                 focusedItemIndex = discoverFocusedItemIndex,
                 shouldRestoreFocusedItem = restoreDiscoverFocus,
+                blockFilterFocus = restoreDiscoverFocus || pendingDiscoverRestoreOnResume,
                 onRestoreFocusedItemHandled = { restoreDiscoverFocus = false },
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
                     pendingDiscoverRestoreOnResume = true
                     onNavigateToDetail(itemId, itemType, addonBaseUrl)
                 },
                 onDiscoverItemFocused = { discoverFocusedItemIndex = it },
-                onSelectType = { viewModel.onEvent(SearchEvent.SelectDiscoverType(it)) },
-                onSelectCatalog = { viewModel.onEvent(SearchEvent.SelectDiscoverCatalog(it)) },
-                onSelectGenre = { viewModel.onEvent(SearchEvent.SelectDiscoverGenre(it)) },
+                onSelectType = {
+                    discoverFocusedItemIndex = 0
+                    viewModel.onEvent(SearchEvent.SelectDiscoverType(it))
+                },
+                onSelectCatalog = {
+                    discoverFocusedItemIndex = 0
+                    viewModel.onEvent(SearchEvent.SelectDiscoverCatalog(it))
+                },
+                onSelectGenre = {
+                    discoverFocusedItemIndex = 0
+                    viewModel.onEvent(SearchEvent.SelectDiscoverGenre(it))
+                },
                 onLoadMore = { viewModel.onEvent(SearchEvent.LoadNextDiscoverResults) },
+                onItemLongPress = { item, addonBaseUrl ->
+                    viewModel.posterOptions.show(item, addonBaseUrl)
+                },
                 modifier = Modifier.padding(top = 16.dp)
             )
         }
+
+        val posterOptionsState by viewModel.posterOptions.state.collectAsState()
+        com.nuvio.tv.ui.components.posteroptions.PosterOptionsHost(
+            state = posterOptionsState,
+            controller = viewModel.posterOptions,
+            onNavigateToDetail = { id, type, addonBaseUrl ->
+                pendingDiscoverRestoreOnResume = true
+                onNavigateToDetail(id, type, addonBaseUrl)
+            }
+        )
     }
 }

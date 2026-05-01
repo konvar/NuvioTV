@@ -14,6 +14,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.ui.screens.CatalogSeeAllScreen
 import com.nuvio.tv.ui.screens.LayoutSelectionScreen
 import com.nuvio.tv.ui.screens.detail.MetaDetailsScreen
@@ -173,7 +174,7 @@ fun NuvioNavHost(
 
             HomeScreen(
                 onNavigateToDetail = { itemId, itemType, addonBaseUrl ->
-                    val heroBackdrop = HeroBackdropState.currentHeroBackdropUrl
+                    val heroBackdrop = HeroBackdropState.consumeAndClear()
                     navController.navigate(
                         Screen.Detail.createRoute(
                             itemId = itemId,
@@ -459,7 +460,14 @@ fun NuvioNavHost(
                     }
                 },
                 onStreamSelected = { playbackInfo ->
-                    playbackInfo.url?.let { url ->
+                    val streamUrl = playbackInfo.url
+                        ?: if (playbackInfo.isTorrent) "torrent://${playbackInfo.infoHash}" else null
+                    // When both url and infoHash are present (debrid cached torrent),
+                    // prefer the HTTP url and don't pass infoHash — avoids starting
+                    // TorrServer for a stream that's already available via HTTP.
+                    val effectiveInfoHash = if (playbackInfo.url != null) null else playbackInfo.infoHash
+                    val effectiveFileIdx = if (playbackInfo.url != null) null else playbackInfo.fileIdx
+                    streamUrl?.let { url ->
                         navController.navigate(
                             Screen.Player.createRoute(
                                 streamUrl = url,
@@ -488,13 +496,20 @@ fun NuvioNavHost(
                                 addonName = playbackInfo.addonName,
                                 addonLogo = playbackInfo.addonLogo,
                                 streamDescription = playbackInfo.streamDescription,
+                                infoHash = effectiveInfoHash,
+                                fileIdx = effectiveFileIdx,
+                                sources = playbackInfo.sources,
                                 contentLanguage = playbackInfo.contentLanguage
                             )
                         )
                     }
                 },
                 onAutoPlayResolved = { playbackInfo ->
-                    playbackInfo.url?.let { url ->
+                    val autoPlayUrl = playbackInfo.url
+                        ?: if (playbackInfo.isTorrent) "torrent://${playbackInfo.infoHash}" else null
+                    val effectiveInfoHash = if (playbackInfo.url != null) null else playbackInfo.infoHash
+                    val effectiveFileIdx = if (playbackInfo.url != null) null else playbackInfo.fileIdx
+                    autoPlayUrl?.let { url ->
                         navController.navigate(
                             Screen.Player.createRoute(
                                 streamUrl = url,
@@ -523,6 +538,9 @@ fun NuvioNavHost(
                                 addonName = playbackInfo.addonName,
                                 addonLogo = playbackInfo.addonLogo,
                                 streamDescription = playbackInfo.streamDescription,
+                                infoHash = effectiveInfoHash,
+                                fileIdx = effectiveFileIdx,
+                                sources = playbackInfo.sources,
                                 contentLanguage = playbackInfo.contentLanguage
                             )
                         ) {
@@ -666,7 +684,7 @@ fun NuvioNavHost(
             )
         ) { backStackEntry ->
             PlayerScreen(
-                onBackPress = { currentSeason, currentEpisode, autoPlayEnabled ->
+                onBackPress = { currentVideoId, currentSeason, currentEpisode, autoPlayEnabled ->
                     val args = backStackEntry.arguments
                     val initialSeason = args?.getString("season")?.toIntOrNull()
                     val initialEpisode = args?.getString("episode")?.toIntOrNull()
@@ -712,7 +730,7 @@ fun NuvioNavHost(
                         }
                         episodeChangedInPlace && !autoPlayEnabled -> {
                             // manual stream switch to next episode — go to Stream of current episode
-                            val videoId = args?.getString("videoId").orEmpty()
+                            val videoId = currentVideoId ?: args?.getString("videoId").orEmpty()
                             if (videoId.isNotBlank() && contentType.isNotBlank()) {
                                 navController.navigate(
                                     Screen.Stream.createRoute(
@@ -999,10 +1017,12 @@ fun NuvioNavHost(
             )
         }
 
-        composable(Screen.Plugins.route) {
-            PluginScreen(
-                onBackPress = { navController.popBackStack() }
-            )
+        if (AppFeaturePolicy.pluginsEnabled) {
+            composable(Screen.Plugins.route) {
+                PluginScreen(
+                    onBackPress = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(Screen.Account.route) {

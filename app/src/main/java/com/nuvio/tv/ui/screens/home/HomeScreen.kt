@@ -2,6 +2,7 @@ package com.nuvio.tv.ui.screens.home
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
+import android.util.Log
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -59,7 +60,7 @@ private data class HomePosterOptionsTarget(
     val addonBaseUrl: String
 )
 
-private const val HOME_STARTUP_CW_GATE_TIMEOUT_MS = 5_000L
+private const val HOME_STABLE_GATE_TIMEOUT_MS = 5_000L
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -85,50 +86,79 @@ fun HomeScreen(
     onNavigateToFolderDetail: (String, String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val initialCwResolved by viewModel.initialCwResolved.collectAsStateWithLifecycle()
+    val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
     val effectiveAutoplayEnabled by viewModel.effectiveAutoplayEnabled.collectAsStateWithLifecycle(
         initialValue = false
     )
     val hasCatalogContent = uiState.catalogRows.any { it.items.isNotEmpty() }
-    var hasEnteredCatalogContent by rememberSaveable { mutableStateOf(false) }
+    val hasCollectionContent = uiState.homeRows.any { it is HomeRow.CollectionRow }
+    val hasHeroContent = uiState.heroItems.isNotEmpty()
+    val modernPresentationReady =
+        uiState.homeLayout != HomeLayout.MODERN ||
+            uiState.modernHomePresentation.rows.isNotEmpty() ||
+            (uiState.heroSectionEnabled && hasHeroContent && !hasCatalogContent && !hasCollectionContent)
     var showHomeContentWithAnimation by rememberSaveable { mutableStateOf(false) }
-    var hasReleasedStartupCwGate by rememberSaveable { mutableStateOf(false) }
-    var startupCwGateTimedOut by rememberSaveable { mutableStateOf(false) }
     var hasShownInitialHomeContent by rememberSaveable { mutableStateOf(false) }
+    // Once we've shown stable home content, never go back to loading gate.
+    var homeStableGateReleased by rememberSaveable { mutableStateOf(false) }
+    // Track that catalog loading has started at least once (isLoading went true→false).
+    var catalogLoadingStarted by rememberSaveable { mutableStateOf(false) }
     var posterOptionsTarget by remember { mutableStateOf<HomePosterOptionsTarget?>(null) }
+
+    LaunchedEffect(uiState.homeLayout) {
+        if (uiState.homeLayout != HomeLayout.MODERN) {
+            HeroBackdropState.update(null)
+        }
+    }
 
     // Stable lambdas — captured via rememberUpdatedState so they never cause
     // downstream recomposition when uiState changes.
     val latestMovieWatchedStatus by rememberUpdatedState(uiState.movieWatchedStatus)
     val latestPosterOptionsTarget by rememberUpdatedState(posterOptionsTarget)
-    val isCatalogItemWatched: (MetaPreview) -> Boolean = remember(uiState.movieWatchedStatus) {
+    val isCatalogItemWatched: (MetaPreview) -> Boolean = remember(Unit) {
         { item -> latestMovieWatchedStatus[homeItemStatusKey(item.id, item.apiType)] == true }
     }
     val onCatalogItemLongPress: (MetaPreview, String) -> Unit = remember(Unit) {
         { item, addonBaseUrl -> posterOptionsTarget = HomePosterOptionsTarget(item, addonBaseUrl) }
     }
 
-    LaunchedEffect(hasCatalogContent) {
-        if (hasCatalogContent) {
-            hasEnteredCatalogContent = true
+    LaunchedEffect(
+        uiState.isLoading,
+        hasCatalogContent,
+        hasCollectionContent,
+        hasHeroContent,
+        initialCwResolved,
+        modernPresentationReady
+    ) {
+        // Track that addons are known (even if isLoading flipped too fast to catch).
+        if (uiState.installedAddonsCount > 0) {
+            catalogLoadingStarted = true
+        }
+        // Wait until catalog loading has completed with content AND the CW
+        // pipeline has completed its first emission.
+        if (!homeStableGateReleased &&
+            catalogLoadingStarted &&
+            !uiState.isLoading &&
+            initialCwResolved &&
+            modernPresentationReady &&
+            // When addons are installed, require at least one catalog row.
+            (hasCatalogContent || uiState.installedAddonsCount == 0)
+        ) {
+            Log.d("HomeGate", "RELEASE: catalogs=$hasCatalogContent cwResolved=$initialCwResolved cwItems=${uiState.continueWatchingItems.size} addons=${uiState.installedAddonsCount}")
+            homeStableGateReleased = true
         }
     }
 
     LaunchedEffect(Unit) {
-        delay(HOME_STARTUP_CW_GATE_TIMEOUT_MS)
-        startupCwGateTimedOut = true
-    }
-
-    LaunchedEffect(uiState.continueWatchingItems.isNotEmpty(), startupCwGateTimedOut) {
-        if (!hasReleasedStartupCwGate &&
-            (uiState.continueWatchingItems.isNotEmpty() || startupCwGateTimedOut)
-        ) {
-            hasReleasedStartupCwGate = true
-        }
-    }
-
-    LaunchedEffect(showHomeContentWithAnimation) {
-        if (showHomeContentWithAnimation) {
-            hasShownInitialHomeContent = true
+        // Safety timeout — if catalogs and CW haven't loaded within this
+        // window, show whatever is available.  Covers edge cases like
+        // clean cache (addons loading from remote sync) and users with
+        // no addons at all.
+        delay(HOME_STABLE_GATE_TIMEOUT_MS)
+        if (!homeStableGateReleased) {
+            Log.d("HomeGate", "RELEASE timeout: isLoading=${uiState.isLoading} cwResolved=$initialCwResolved catalogs=$hasCatalogContent cwItems=${uiState.continueWatchingItems.size}")
+            homeStableGateReleased = true
         }
     }
 
@@ -151,9 +181,19 @@ fun HomeScreen(
     ) {
         val hasAnyContent = uiState.catalogRows.isNotEmpty() ||
             uiState.continueWatchingItems.isNotEmpty() ||
-            uiState.heroItems.isNotEmpty()
+            uiState.heroItems.isNotEmpty() ||
+            hasCollectionContent
 
         when {
+            !uiState.layoutPreferencesReady -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadingIndicator()
+                }
+            }
+
             uiState.isLoading && !hasAnyContent -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -164,28 +204,40 @@ fun HomeScreen(
             }
 
             uiState.error == "No addons installed" && uiState.catalogRows.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.home_no_addons),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = NuvioColors.TextSecondary
-                    )
+                if (!homeStableGateReleased) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        LoadingIndicator()
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.home_no_addons),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NuvioColors.TextSecondary
+                        )
+                    }
                 }
             }
 
-            uiState.error == "No catalog addons installed" && uiState.catalogRows.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.home_no_catalog_addons),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = NuvioColors.TextSecondary
-                    )
+            uiState.error == "No catalog addons installed" && uiState.catalogRows.isEmpty() && !hasCollectionContent && !hasHeroContent -> {
+                if (!homeStableGateReleased) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        LoadingIndicator()
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.home_no_catalog_addons),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NuvioColors.TextSecondary
+                        )
+                    }
                 }
             }
 
@@ -196,20 +248,10 @@ fun HomeScreen(
                 )
             }
 
-            else -> {
-                val shouldShowLoadingGate =
-                    !hasReleasedStartupCwGate ||
-                        (!hasEnteredCatalogContent && !hasCatalogContent)
-                LaunchedEffect(shouldShowLoadingGate) {
-                    if (shouldShowLoadingGate) {
-                        showHomeContentWithAnimation = false
-                    } else {
-                        // Flip on the next frame so AnimatedVisibility can run enter transition.
-                        kotlinx.coroutines.yield()
-                        showHomeContentWithAnimation = true
-                    }
-                }
-                if (shouldShowLoadingGate) {
+            !uiState.isLoading && !hasAnyContent -> {
+                // Don't show "no catalogs" until the stable gate has released —
+                // addons may still be loading from remote after a cache clear.
+                if (!homeStableGateReleased) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -217,16 +259,69 @@ fun HomeScreen(
                         LoadingIndicator()
                     }
                 } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.web_no_catalogs),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NuvioColors.TextSecondary
+                        )
+                    }
+                }
+            }
+
+            else -> {
+                // On first launch, wait for stable content before revealing home.
+                // Once released, never go back to loading (homeStableGateReleased is rememberSaveable).
+                if (!homeStableGateReleased) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingIndicator()
+                    }
+                } else if (!modernPresentationReady) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LoadingIndicator()
+                    }
+                } else {
+                    // Flip showHomeContentWithAnimation on the next frame so
+                    // AnimatedVisibility can run its enter transition.
+                    LaunchedEffect(Unit) {
+                        if (!showHomeContentWithAnimation) {
+                            kotlinx.coroutines.yield()
+                            showHomeContentWithAnimation = true
+                        }
+                    }
+                    LaunchedEffect(showHomeContentWithAnimation) {
+                        if (showHomeContentWithAnimation) {
+                            hasShownInitialHomeContent = true
+                        }
+                    }
+                    // Keep loading visible during the single-frame gap before animation starts.
+                    if (!showHomeContentWithAnimation) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LoadingIndicator()
+                        }
+                    }
                     AnimatedVisibility(
                         visible = showHomeContentWithAnimation,
                         enter = if (hasShownInitialHomeContent) {
+                            EnterTransition.None
+                        } else {
                             fadeIn(animationSpec = tween(320)) +
                                 slideInVertically(
                                     initialOffsetY = { it / 24 },
                                     animationSpec = tween(320)
                                 )
-                        } else {
-                            EnterTransition.None
                         }
                     ) {
                         when (uiState.homeLayout) {
@@ -365,10 +460,12 @@ private fun ClassicHomeRoute(
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
 ) {
     val focusState by viewModel.focusState.collectAsStateWithLifecycle()
+    val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
     ClassicHomeContent(
         uiState = uiState,
         posterCardStyle = posterCardStyle,
         focusState = focusState,
+        scrollToTopTrigger = scrollToTopTrigger,
         trailerPreviewUrls = viewModel.trailerPreviewUrls,
         trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
         onNavigateToDetail = onNavigateToDetail,
@@ -391,6 +488,9 @@ private fun ClassicHomeRoute(
         },
         onSaveFocusState = { vi, vo, ri, ii, m ->
             viewModel.saveFocusState(vi, vo, ri, ii, m)
+        },
+        onRequestLazyCatalogLoad = remember(viewModel) {
+            { catalogKey: String -> viewModel.requestLazyCatalogLoad(catalogKey) }
         }
     )
 }
@@ -411,10 +511,12 @@ private fun GridHomeRoute(
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
 ) {
     val gridFocusState by viewModel.gridFocusState.collectAsStateWithLifecycle()
+    val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
     GridHomeContent(
         uiState = uiState,
         posterCardStyle = posterCardStyle,
         gridFocusState = gridFocusState,
+        scrollToTopTrigger = scrollToTopTrigger,
         onNavigateToDetail = onNavigateToDetail,
         onContinueWatchingClick = onContinueWatchingClick,
         onContinueWatchingStartFromBeginning = onContinueWatchingStartFromBeginning,
@@ -450,7 +552,10 @@ private fun ModernHomeRoute(
     onCatalogItemLongPress: (MetaPreview, String) -> Unit
 ) {
     val focusState by viewModel.focusState.collectAsStateWithLifecycle()
+    val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
     val enrichingItemId by viewModel.enrichingItemId.collectAsStateWithLifecycle()
+    val lastEnrichedPreview by viewModel.lastEnrichedPreview.collectAsStateWithLifecycle()
+    val enrichedPreviews by viewModel.enrichedPreviews.collectAsStateWithLifecycle()
     val requestTrailerPreview = remember(viewModel) {
         { itemId: String, title: String, releaseInfo: String?, apiType: String ->
             viewModel.requestTrailerPreview(itemId, title, releaseInfo, apiType)
@@ -479,7 +584,10 @@ private fun ModernHomeRoute(
     ModernHomeContent(
         uiState = uiState,
         focusState = focusState,
+        scrollToTopTrigger = scrollToTopTrigger,
         enrichingItemId = enrichingItemId,
+        lastEnrichedPreview = lastEnrichedPreview,
+        enrichedPreviews = enrichedPreviews,
         trailerPreviewUrls = viewModel.trailerPreviewUrls,
         trailerPreviewAudioUrls = viewModel.trailerPreviewAudioUrls,
         onNavigateToDetail = onNavigateToDetail,
@@ -497,7 +605,10 @@ private fun ModernHomeRoute(
             { item -> viewModel.onItemFocus(item) }
         },
         onPreloadAdjacentItem = preloadAdjacentItem,
-        onSaveFocusState = saveModernFocusState
+        onSaveFocusState = saveModernFocusState,
+        onRequestLazyCatalogLoad = remember(viewModel) {
+            { catalogKey: String -> viewModel.requestLazyCatalogLoad(catalogKey) }
+        }
     )
 }
 

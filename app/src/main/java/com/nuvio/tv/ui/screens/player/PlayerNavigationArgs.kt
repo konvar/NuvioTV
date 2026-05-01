@@ -1,6 +1,7 @@
 package com.nuvio.tv.ui.screens.player
 
 import androidx.lifecycle.SavedStateHandle
+import org.json.JSONArray
 import java.net.URLDecoder
 
 internal data class PlayerNavigationArgs(
@@ -27,13 +28,34 @@ internal data class PlayerNavigationArgs(
     val addonName: String?,
     val addonLogo: String?,
     val streamDescription: String?,
+    val infoHash: String?,
+    val fileIdx: Int?,
+    val sourcesJson: String?,
     val contentLanguage: String?
 ) {
+    val torrentTrackers: List<String>
+        get() {
+            val json = sourcesJson ?: return emptyList()
+            return try {
+                val arr = JSONArray(json)
+                (0 until arr.length())
+                    .mapNotNull { arr.optString(it) }
+                    .filter { it.startsWith("tracker:") }
+                    .map { it.removePrefix("tracker:") }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
     companion object {
         fun from(savedStateHandle: SavedStateHandle): PlayerNavigationArgs {
             fun decodedOrNull(key: String): String? {
                 val value = savedStateHandle.get<String>(key) ?: return null
-                return if (value.isNotEmpty()) URLDecoder.decode(value, "UTF-8") else null
+                if (value.isEmpty()) return null
+                // Stream metadata occasionally contains stray `%` or malformed escapes
+                // (e.g. via AIOStreams Formatter). Fall back to the raw value rather
+                // than crashing the player on launch.
+                return runCatching { URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
             }
 
             return PlayerNavigationArgs(
@@ -61,6 +83,9 @@ internal data class PlayerNavigationArgs(
                 addonName = decodedOrNull("addonName"),
                 addonLogo = decodedOrNull("addonLogo"),
                 streamDescription = decodedOrNull("streamDescription"),
+                infoHash = savedStateHandle.get<String>("infoHash")?.takeIf { it.isNotEmpty() },
+                fileIdx = savedStateHandle.get<String>("fileIdx")?.toIntOrNull(),
+                sourcesJson = decodedOrNull("sources"),
                 contentLanguage = decodedOrNull("contentLanguage")
             )
         }

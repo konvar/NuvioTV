@@ -291,7 +291,7 @@ fun LibraryScreen(
             )
         }
 
-        if (uiState.sourceMode == LibrarySourceMode.TRAKT) {
+        if (uiState.sourceMode == LibrarySourceMode.TRAKT && uiState.isTraktAuthenticated) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 LibraryActionsRow(
                     pending = uiState.pendingOperation,
@@ -305,13 +305,15 @@ fun LibraryScreen(
         if (uiState.visibleItems.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 val selectedTypeLabel = uiState.selectedTypeTab?.let { localizedTypeLabel(it.key) }?.lowercase() ?: stringResource(R.string.library_type_items)
-                val title = when (uiState.sourceMode) {
-                    LibrarySourceMode.LOCAL -> stringResource(R.string.library_empty_local_title, selectedTypeLabel)
-                    LibrarySourceMode.TRAKT -> stringResource(R.string.library_empty_trakt_title, selectedTypeLabel)
+                val title = when {
+                    uiState.sourceMode == LibrarySourceMode.TRAKT && !uiState.isTraktAuthenticated -> stringResource(R.string.library_empty_trakt_not_auth_title)
+                    uiState.sourceMode == LibrarySourceMode.TRAKT -> stringResource(R.string.library_empty_trakt_title, selectedTypeLabel)
+                    else -> stringResource(R.string.library_empty_local_title, selectedTypeLabel)
                 }
-                val subtitle = when (uiState.sourceMode) {
-                    LibrarySourceMode.LOCAL -> stringResource(R.string.library_empty_local_subtitle)
-                    LibrarySourceMode.TRAKT -> stringResource(R.string.library_empty_trakt_subtitle)
+                val subtitle = when {
+                    uiState.sourceMode == LibrarySourceMode.TRAKT && !uiState.isTraktAuthenticated -> stringResource(R.string.library_empty_trakt_not_auth_subtitle)
+                    uiState.sourceMode == LibrarySourceMode.TRAKT -> stringResource(R.string.library_empty_trakt_subtitle)
+                    else -> stringResource(R.string.library_empty_local_subtitle)
                 }
                 EmptyScreenState(
                     title = title,
@@ -324,8 +326,11 @@ fun LibraryScreen(
         items(uiState.visibleItems, key = { "${it.type}:${it.id}" }) { item ->
             val focusKey = "${item.type}:${item.id}"
             val isSeries = item.type.equals("series", ignoreCase = true) || item.type.equals("tv", ignoreCase = true)
+            val previewForLongPress = remember(item) {
+                item.toMetaPreview().copy(posterShape = PosterShape.POSTER)
+            }
             GridContentCard(
-                item = item.toMetaPreview().copy(posterShape = PosterShape.POSTER),
+                item = previewForLongPress,
                 posterCardStyle = posterCardStyle,
                 isWatched = if (isSeries) item.id in watchedSeriesIds else item.id in watchedMovieIds,
                 focusRequester = posterFocusRequesters[focusKey],
@@ -336,6 +341,10 @@ fun LibraryScreen(
                 onClick = {
                     lastFocusedPosterKey = focusKey
                     onNavigateToDetail(item.id, item.type, item.addonBaseUrl)
+                },
+                onLongPress = {
+                    lastFocusedPosterKey = focusKey
+                    viewModel.posterOptions.show(previewForLongPress, item.addonBaseUrl)
                 }
             )
         }
@@ -401,6 +410,15 @@ fun LibraryScreen(
             )
         }
     }
+
+    val posterOptionsState by viewModel.posterOptions.state.collectAsState()
+    com.nuvio.tv.ui.components.posteroptions.PosterOptionsHost(
+        state = posterOptionsState,
+        controller = viewModel.posterOptions,
+        onNavigateToDetail = { id, type, addonBaseUrl ->
+            onNavigateToDetail(id, type, addonBaseUrl.takeIf { it.isNotBlank() })
+        }
+    )
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
