@@ -731,6 +731,14 @@ internal fun PlayerRuntimeController.reloadEpisodeStreams() {
 }
 
 internal fun PlayerRuntimeController.switchToEpisodeStream(stream: Stream, forcedTargetVideo: Video? = null) {
+    if (interceptEpisodeSwitchForTraktRating(stream, forcedTargetVideo)) {
+        return
+    }
+
+    performSwitchToEpisodeStream(stream, forcedTargetVideo)
+}
+
+internal fun PlayerRuntimeController.performSwitchToEpisodeStream(stream: Stream, forcedTargetVideo: Video? = null) {
     if (openExternalStreamInBrowser(stream = stream, fromEpisodePanel = true)) {
         return
     }
@@ -786,6 +794,8 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(stream: Stream, force
     persistSelectedStreamForReuse(stream = stream, url = url, headers = newHeaders)
     currentTraktEpisodeMapping = null
     currentTraktEpisodeMappingKey = null
+    pendingCompletionAction = null
+    pendingTraktRatingItem = null
     lastSavedPosition = 0L
 
     _uiState.update {
@@ -802,6 +812,9 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(stream: Stream, force
             subtitleTracks = emptyList(),
             selectedAudioTrackIndex = -1,
             selectedSubtitleTrackIndex = -1,
+            playbackEnded = false,
+            playbackCompletionReadyToExit = false,
+            exitPlayerReady = false,
             showEpisodesPanel = false,
             showEpisodeStreams = false,
             isLoadingEpisodeStreams = false,

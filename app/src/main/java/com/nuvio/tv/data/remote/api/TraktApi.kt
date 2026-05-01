@@ -17,9 +17,14 @@ import com.nuvio.tv.data.remote.dto.trakt.TraktListItemsMutationResponseDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktListSummaryDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktMovieDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktPlaybackItemDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktUpNextItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktReorderListsRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktReorderListsResponseDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRefreshTokenRequestDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsAddRequestDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatingsAddResponseDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatedEpisodeItemDto
+import com.nuvio.tv.data.remote.dto.trakt.TraktRatedMovieItemDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktRevokeRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktScrobbleRequestDto
 import com.nuvio.tv.data.remote.dto.trakt.TraktScrobbleResponseDto
@@ -84,6 +89,12 @@ interface TraktApi {
         @Body body: TraktScrobbleRequestDto
     ): Response<TraktScrobbleResponseDto>
 
+    @POST("scrobble/pause")
+    suspend fun scrobblePause(
+        @Header("Authorization") authorization: String,
+        @Body body: TraktScrobbleRequestDto
+    ): Response<TraktScrobbleResponseDto>
+
     @POST("scrobble/stop")
     suspend fun scrobbleStop(
         @Header("Authorization") authorization: String,
@@ -102,6 +113,14 @@ interface TraktApi {
         @Query("start_at") startAt: String? = null,
         @Query("end_at") endAt: String? = null
     ): Response<List<TraktPlaybackItemDto>>
+
+    @GET("sync/progress/up_next")
+    suspend fun getUpNext(
+        @Header("Authorization") authorization: String,
+        @Query("extended") extended: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 100
+    ): Response<List<TraktUpNextItemDto>>
 
     @GET("sync/watched/{type}")
     suspend fun getWatched(
@@ -229,6 +248,22 @@ interface TraktApi {
         @Header("Authorization") authorization: String,
         @Body body: TraktHistoryRemoveRequestDto
     ): Response<TraktHistoryRemoveResponseDto>
+
+    @POST("sync/ratings")
+    suspend fun addRatings(
+        @Header("Authorization") authorization: String,
+        @Body body: TraktRatingsAddRequestDto
+    ): Response<TraktRatingsAddResponseDto>
+
+    @GET("sync/ratings/movies")
+    suspend fun getRatedMovies(
+        @Header("Authorization") authorization: String
+    ): Response<List<TraktRatedMovieItemDto>>
+
+    @GET("sync/ratings/episodes")
+    suspend fun getRatedEpisodes(
+        @Header("Authorization") authorization: String
+    ): Response<List<TraktRatedEpisodeItemDto>>
 
     @GET("users/{id}/lists")
     suspend fun getUserLists(

@@ -238,7 +238,8 @@ class TraktEpisodeMappingService @Inject constructor(
                         EpisodeMappingEntry(
                             season = seasonNumber,
                             episode = episodeNumber,
-                            title = episodeDto.title
+                            title = episodeDto.title,
+                            ids = episodeDto.ids
                         )
                     }
             }

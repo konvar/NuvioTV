@@ -20,6 +20,8 @@ data class PlayerUiState(
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = true,
     val playbackEnded: Boolean = false,
+    val playbackCompletionReadyToExit: Boolean = false,
+    val exitPlayerReady: Boolean = false,
     val title: String = "",
     val contentName: String? = null, // Series/show name (for series content)
     val releaseYear: String? = null, // Release year for movies
@@ -63,6 +65,11 @@ data class PlayerUiState(
     val subtitleAutoSyncLoadedTrackKey: String? = null,
     val showSpeedDialog: Boolean = false,
     val showMoreDialog: Boolean = false,
+    val showTraktRatingDialog: Boolean = false,
+    val selectedTraktRating: Int = 6,
+    val existingTraktRating: Int? = null,
+    val traktRatingSubmitting: Boolean = false,
+    val traktRatingError: String? = null,
     // Subtitle style settings
     val subtitleStyle: SubtitleStyleSettings = SubtitleStyleSettings(),
     // Addon subtitles
@@ -229,9 +236,14 @@ sealed class PlayerEvent {
     data object OnShowSubtitleDelayOverlay : PlayerEvent()
     data object OnHideSubtitleDelayOverlay : PlayerEvent()
     data class OnAdjustSubtitleDelay(val deltaMs: Int, val showOverlay: Boolean = true) : PlayerEvent()
+    data object OnResetSubtitleDelay : PlayerEvent()
     data object OnShowSpeedDialog : PlayerEvent()
     data object OnShowMoreDialog : PlayerEvent()
     data object OnDismissMoreDialog : PlayerEvent()
+    data object OnRequestExitPlayer : PlayerEvent()
+    data class OnSelectTraktRating(val rating: Int) : PlayerEvent()
+    data class OnSubmitTraktRating(val rating: Int? = null) : PlayerEvent()
+    data object OnDismissTraktRatingDialog : PlayerEvent()
     data object OnShowEpisodesPanel : PlayerEvent()
     data object OnDismissEpisodesPanel : PlayerEvent()
     data object OnBackFromEpisodeStreams : PlayerEvent()

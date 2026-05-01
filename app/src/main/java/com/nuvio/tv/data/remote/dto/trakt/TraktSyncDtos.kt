@@ -28,6 +28,22 @@ data class TraktPlaybackItemDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class TraktUpNextItemDto(
+    @Json(name = "show") val show: TraktShowDto? = null,
+    @Json(name = "progress") val progress: TraktProgressInfoDto? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktProgressInfoDto(
+    @Json(name = "aired") val aired: Int? = null,
+    @Json(name = "completed") val completed: Int? = null,
+    @Json(name = "last_watched_at") val lastWatchedAt: String? = null,
+    @Json(name = "reset_at") val resetAt: String? = null,
+    @Json(name = "next_episode") val nextEpisode: TraktEpisodeDto? = null,
+    @Json(name = "last_episode") val lastEpisode: TraktEpisodeDto? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class TraktWatchedMovieItemDto(
     @Json(name = "plays") val plays: Int? = null,
     @Json(name = "last_watched_at") val lastWatchedAt: String? = null,
@@ -185,6 +201,51 @@ data class TraktHistoryAddNotFoundDto(
     @Json(name = "shows") val shows: List<TraktShowDto>? = null,
     @Json(name = "seasons") val seasons: List<TraktHistorySeasonAddDto>? = null,
     @Json(name = "episodes") val episodes: List<TraktEpisodeDto>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingMovieRequestDto(
+    @Json(name = "rating") val rating: Int,
+    @Json(name = "ids") val ids: TraktIdsDto
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingEpisodeRequestDto(
+    @Json(name = "rating") val rating: Int,
+    @Json(name = "ids") val ids: TraktIdsDto
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingsAddRequestDto(
+    @Json(name = "movies") val movies: List<TraktRatingMovieRequestDto>? = null,
+    @Json(name = "episodes") val episodes: List<TraktRatingEpisodeRequestDto>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingsAddResponseDto(
+    @Json(name = "added") val added: TraktHistoryRemoveCountDto? = null,
+    @Json(name = "not_found") val notFound: TraktRatingsNotFoundDto? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatingsNotFoundDto(
+    @Json(name = "movies") val movies: List<TraktRatingMovieRequestDto>? = null,
+    @Json(name = "episodes") val episodes: List<TraktRatingEpisodeRequestDto>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatedMovieItemDto(
+    @Json(name = "rated_at") val ratedAt: String? = null,
+    @Json(name = "rating") val rating: Int? = null,
+    @Json(name = "movie") val movie: TraktMovieDto? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktRatedEpisodeItemDto(
+    @Json(name = "rated_at") val ratedAt: String? = null,
+    @Json(name = "rating") val rating: Int? = null,
+    @Json(name = "show") val show: TraktShowDto? = null,
+    @Json(name = "episode") val episode: TraktEpisodeDto? = null
 )
 
 @JsonClass(generateAdapter = true)

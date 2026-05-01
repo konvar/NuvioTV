@@ -49,6 +49,9 @@ data class TraktUiState(
     val continueWatchingDaysCap: Int = TraktSettingsDataStore.DEFAULT_CONTINUE_WATCHING_DAYS_CAP,
     val showUnairedNextUp: Boolean = TraktSettingsDataStore.DEFAULT_SHOW_UNAIRED_NEXT_UP,
     val showMetaComments: Boolean = TraktSettingsDataStore.DEFAULT_SHOW_META_COMMENTS,
+    val rateMoviesAfterWatching: Boolean = TraktSettingsDataStore.DEFAULT_RATE_MOVIES_AFTER_WATCHING,
+    val rateEpisodesAfterWatching: Boolean = TraktSettingsDataStore.DEFAULT_RATE_EPISODES_AFTER_WATCHING,
+    val defaultRatingPromptValue: Int = TraktSettingsDataStore.DEFAULT_RATING_PROMPT_VALUE,
     val watchProgressSource: WatchProgressSource = TraktSettingsDataStore.DEFAULT_WATCH_PROGRESS_SOURCE,
     val librarySourceMode: LibrarySourceMode = TraktSettingsDataStore.DEFAULT_LIBRARY_SOURCE_MODE,
     val connectedStats: TraktProgressService.TraktCachedStats? = null,
@@ -124,6 +127,57 @@ class TraktViewModel @Inject constructor(
                     } else {
                         context.getString(R.string.trakt_comments_now_hidden)
                     }
+                )
+            }
+        }
+    }
+
+    fun onRateMoviesAfterWatchingChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            traktSettingsDataStore.setRateMoviesAfterWatching(enabled)
+            _uiState.update {
+                it.copy(
+                    rateMoviesAfterWatching = enabled,
+                    statusMessage = if (enabled) {
+                        context.getString(R.string.trakt_movie_ratings_enabled)
+                    } else {
+                        context.getString(R.string.trakt_movie_ratings_disabled)
+                    }
+                )
+            }
+        }
+    }
+
+    fun onRateEpisodesAfterWatchingChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            traktSettingsDataStore.setRateEpisodesAfterWatching(enabled)
+            _uiState.update {
+                it.copy(
+                    rateEpisodesAfterWatching = enabled,
+                    statusMessage = if (enabled) {
+                        context.getString(R.string.trakt_episode_ratings_enabled)
+                    } else {
+                        context.getString(R.string.trakt_episode_ratings_disabled)
+                    }
+                )
+            }
+        }
+    }
+
+    fun onDefaultRatingPromptValueSelected(rating: Int) {
+        viewModelScope.launch {
+            val normalizedRating = rating.coerceIn(
+                minimumValue = TraktSettingsDataStore.MIN_RATING_PROMPT_VALUE,
+                maximumValue = TraktSettingsDataStore.MAX_RATING_PROMPT_VALUE
+            )
+            traktSettingsDataStore.setDefaultRatingPromptValue(normalizedRating)
+            _uiState.update {
+                it.copy(
+                    defaultRatingPromptValue = normalizedRating,
+                    statusMessage = context.getString(
+                        R.string.trakt_default_rating_updated,
+                        normalizedRating
+                    )
                 )
             }
         }
@@ -287,12 +341,35 @@ class TraktViewModel @Inject constructor(
                 traktSettingsDataStore.watchProgressSource,
                 traktSettingsDataStore.librarySourceMode
             ) { daysCap, showUnairedNextUp, showMetaComments, watchProgressSource, librarySourceMode ->
-                SettingsSnapshot(
+                BaseSettingsSnapshot(
                     continueWatchingDaysCap = daysCap,
                     showUnairedNextUp = showUnairedNextUp,
                     showMetaComments = showMetaComments,
                     watchProgressSource = watchProgressSource,
                     librarySourceMode = librarySourceMode
+                )
+            }.combine(
+                combine(
+                    traktSettingsDataStore.rateMoviesAfterWatching,
+                    traktSettingsDataStore.rateEpisodesAfterWatching,
+                    traktSettingsDataStore.defaultRatingPromptValue
+                ) { rateMoviesAfterWatching, rateEpisodesAfterWatching, defaultRatingPromptValue ->
+                    RatingPromptSettingsSnapshot(
+                        rateMoviesAfterWatching = rateMoviesAfterWatching,
+                        rateEpisodesAfterWatching = rateEpisodesAfterWatching,
+                        defaultRatingPromptValue = defaultRatingPromptValue
+                    )
+                }
+            ) { base, ratingPrompt ->
+                SettingsSnapshot(
+                    continueWatchingDaysCap = base.continueWatchingDaysCap,
+                    showUnairedNextUp = base.showUnairedNextUp,
+                    showMetaComments = base.showMetaComments,
+                    rateMoviesAfterWatching = ratingPrompt.rateMoviesAfterWatching,
+                    rateEpisodesAfterWatching = ratingPrompt.rateEpisodesAfterWatching,
+                    defaultRatingPromptValue = ratingPrompt.defaultRatingPromptValue,
+                    watchProgressSource = base.watchProgressSource,
+                    librarySourceMode = base.librarySourceMode
                 )
             }.collectLatest { snapshot ->
                 _uiState.update {
@@ -300,6 +377,9 @@ class TraktViewModel @Inject constructor(
                         continueWatchingDaysCap = snapshot.continueWatchingDaysCap,
                         showUnairedNextUp = snapshot.showUnairedNextUp,
                         showMetaComments = snapshot.showMetaComments,
+                        rateMoviesAfterWatching = snapshot.rateMoviesAfterWatching,
+                        rateEpisodesAfterWatching = snapshot.rateEpisodesAfterWatching,
+                        defaultRatingPromptValue = snapshot.defaultRatingPromptValue,
                         watchProgressSource = snapshot.watchProgressSource,
                         librarySourceMode = snapshot.librarySourceMode
                     )
@@ -308,10 +388,27 @@ class TraktViewModel @Inject constructor(
         }
     }
 
+    private data class BaseSettingsSnapshot(
+        val continueWatchingDaysCap: Int,
+        val showUnairedNextUp: Boolean,
+        val showMetaComments: Boolean,
+        val watchProgressSource: WatchProgressSource,
+        val librarySourceMode: LibrarySourceMode
+    )
+
+    private data class RatingPromptSettingsSnapshot(
+        val rateMoviesAfterWatching: Boolean,
+        val rateEpisodesAfterWatching: Boolean,
+        val defaultRatingPromptValue: Int
+    )
+
     private data class SettingsSnapshot(
         val continueWatchingDaysCap: Int,
         val showUnairedNextUp: Boolean,
         val showMetaComments: Boolean,
+        val rateMoviesAfterWatching: Boolean,
+        val rateEpisodesAfterWatching: Boolean,
+        val defaultRatingPromptValue: Int,
         val watchProgressSource: WatchProgressSource,
         val librarySourceMode: LibrarySourceMode
     )

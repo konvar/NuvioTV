@@ -420,6 +420,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                             emitCompletionScrobbleStop(progressPercent = 99.5f)
                             saveWatchProgress()
                             resetNextEpisodeCardState(clearEpisode = false)
+                            handlePlaybackEndedForTraktRating()
                         }
                     }
 

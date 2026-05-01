@@ -342,14 +342,14 @@ internal fun PlayerRuntimeController.emitScrobbleStop(progressPercent: Float? = 
     hasSentScrobbleStartForCurrentItem = false
 }
 
-internal fun PlayerRuntimeController.emitPauseScrobbleStop(progressPercent: Float) {
+internal fun PlayerRuntimeController.emitPauseScrobblePause(progressPercent: Float) {
     if (progressPercent < 1f || progressPercent >= 80f) return
     val item = currentScrobbleItem
     if (item == null) return
     if (!hasRequestedScrobbleStartForCurrentItem) return
 
     scope.launch(kotlinx.coroutines.NonCancellable) {
-        traktScrobbleService.scrobbleStop(
+        traktScrobbleService.scrobblePause(
             item = item,
             progressPercent = progressPercent
         )
@@ -367,7 +367,7 @@ internal fun PlayerRuntimeController.emitCompletionScrobbleStop(progressPercent:
 
 internal fun PlayerRuntimeController.emitStopScrobbleForCurrentProgress() {
     val progressPercent = currentPlaybackProgressPercent()
-    emitPauseScrobbleStop(progressPercent = progressPercent)
+    emitPauseScrobblePause(progressPercent = progressPercent)
     emitCompletionScrobbleStop(progressPercent = progressPercent)
 }
 
@@ -383,7 +383,7 @@ internal fun PlayerRuntimeController.scheduleProgressSyncAfterSeek() {
         saveWatchProgress()
 
         val progressPercent = currentPlaybackProgressPercent()
-        emitPauseScrobbleStop(progressPercent = progressPercent)
+        emitPauseScrobblePause(progressPercent = progressPercent)
 
         if (isPlaybackCurrentlyPlaying() && progressPercent >= 1f && progressPercent < 80f) {
             emitScrobbleStart()
@@ -836,6 +836,9 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
         is PlayerEvent.OnAdjustSubtitleDelay -> {
             adjustSubtitleDelay(event.deltaMs, event.showOverlay)
         }
+        PlayerEvent.OnResetSubtitleDelay -> {
+            adjustSubtitleDelay(-_uiState.value.subtitleDelayMs, true)
+        }
         PlayerEvent.OnShowSpeedDialog -> {
             val state = _uiState.value
             if (state.tunnelingEnabled) {
@@ -882,6 +885,18 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
         PlayerEvent.OnDismissMoreDialog -> {
             _uiState.update { it.copy(showMoreDialog = false) }
             scheduleHideControls()
+        }
+        PlayerEvent.OnRequestExitPlayer -> {
+            handleExitRequestWithTraktRating()
+        }
+        is PlayerEvent.OnSelectTraktRating -> {
+            _uiState.update { it.copy(selectedTraktRating = event.rating.coerceIn(1, 10)) }
+        }
+        is PlayerEvent.OnSubmitTraktRating -> {
+            submitTraktRating(ratingOverride = event.rating)
+        }
+        PlayerEvent.OnDismissTraktRatingDialog -> {
+            dismissTraktRatingDialog()
         }
         PlayerEvent.OnShowEpisodesPanel -> {
             showEpisodesPanel()
