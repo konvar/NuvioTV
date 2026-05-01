@@ -99,7 +99,7 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
             isMinifyEnabled = false
 
@@ -287,6 +287,7 @@ dependencies {
 
     // Navigation
     implementation(libs.navigation.compose)
+    implementation("androidx.tvprovider:tvprovider:1.1.0")
 
     // DataStore
     implementation(libs.datastore.preferences)

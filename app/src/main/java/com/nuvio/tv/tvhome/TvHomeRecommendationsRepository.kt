@@ -294,13 +294,18 @@ class TvHomeRecommendationsRepositoryImpl @Inject constructor(
     }
 
     private fun mapContinueWatchingItem(progress: WatchProgress): TvHomeItem {
-        val subtitle = progress.episodeDisplayString?.let { episodeLabel ->
+        val episodeLabel = if (progress.season != null && progress.episode != null) {
+            "S${progress.season}E${progress.episode}"
+        } else {
+            null
+        }
+        val subtitle = episodeLabel?.let { label ->
             progress.episodeTitle?.takeIf { it.isNotBlank() }?.let { title ->
-                "$episodeLabel • $title"
-            } ?: episodeLabel
+                "$label - $title"
+            } ?: label
         } ?: "Resume playback"
         val percent = (progress.progressPercentage * 100f).toInt().coerceIn(0, 100)
-        val description = "$subtitle • $percent% watched"
+        val description = "$subtitle - $percent% watched"
 
         return TvHomeItem(
             providerId = buildProgressProviderId("continue", progress),
