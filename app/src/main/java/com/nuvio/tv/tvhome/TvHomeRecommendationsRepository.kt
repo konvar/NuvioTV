@@ -81,7 +81,17 @@ class TvHomeRecommendationsRepositoryImpl @Inject constructor(
 
     override fun observeChannelItems(kind: TvHomeChannelKind): Flow<List<TvHomeItem>> {
         return when (kind) {
-            TvHomeChannelKind.CONTINUE_WATCHING -> continueWatchingFlow
+            TvHomeChannelKind.CONTINUE_WATCHING -> combine(
+                continueWatchingFlow,
+                upNextFlow,
+                upcomingFlow
+            ) { continueWatching, upNext, upcoming ->
+                buildContinueWatchingChannelItems(
+                    continueWatching = continueWatching,
+                    upNext = upNext,
+                    upcoming = upcoming
+                ).take(MAX_ITEMS)
+            }
             TvHomeChannelKind.UPCOMING -> upcomingFlow
             TvHomeChannelKind.MOVIES -> combine(traktLibraryRowsFlow, fallbackMoviesState) { trakt, fallback ->
                 (if (trakt.movies.isNotEmpty()) trakt.movies else fallback).take(MAX_ITEMS)
@@ -96,10 +106,11 @@ class TvHomeRecommendationsRepositoryImpl @Inject constructor(
     }
 
     override fun observeWatchNextItems(): Flow<List<TvHomeItem>> {
-        return combine(continueWatchingFlow, upNextFlow) { continueWatching, upNext ->
+        return combine(continueWatchingFlow, upNextFlow, upcomingFlow) { continueWatching, upNext, upcoming ->
             buildWatchNextItems(
                 continueWatching = continueWatching,
-                upNext = upNext
+                upNext = upNext,
+                upcoming = upcoming
             ).take(MAX_ITEMS)
         }
     }
@@ -199,7 +210,8 @@ class TvHomeRecommendationsRepositoryImpl @Inject constructor(
 
     private fun buildWatchNextItems(
         continueWatching: List<TvHomeItem>,
-        upNext: List<TvHomeItem>
+        upNext: List<TvHomeItem>,
+        upcoming: List<TvHomeItem>
     ): List<TvHomeItem> {
         val result = mutableListOf<TvHomeItem>()
         val activeSeriesIds = mutableSetOf<String>()
@@ -219,6 +231,20 @@ class TvHomeRecommendationsRepositoryImpl @Inject constructor(
                 }
             }
 
+        upcoming.asSequence()
+            .filter { it.isSeries && it.releaseTimeMs != null && it.releaseTimeMs <= System.currentTimeMillis() }
+            .sortedByDescending { it.releaseTimeMs ?: 0L }
+            .forEach { item ->
+                if (item.contentId in activeSeriesIds) return@forEach
+                activeSeriesIds += item.contentId
+
+                result += item.copy(
+                    providerId = "watchnext|new|${item.providerId}",
+                    watchNextType = TvHomeWatchNextType.NEW,
+                    lastEngagementTimeMs = item.releaseTimeMs
+                )
+            }
+
         upNext.asSequence()
             .sortedBy { it.releaseTimeMs ?: Long.MAX_VALUE }
             .forEach { item ->
@@ -232,6 +258,44 @@ class TvHomeRecommendationsRepositoryImpl @Inject constructor(
                     watchNextType = watchNextType
                 )
             }
+
+        return result.dedupeByProvider()
+    }
+
+    private fun buildContinueWatchingChannelItems(
+        continueWatching: List<TvHomeItem>,
+        upNext: List<TvHomeItem>,
+        upcoming: List<TvHomeItem>
+    ): List<TvHomeItem> {
+        val result = mutableListOf<TvHomeItem>()
+        val seenEpisodeKeys = mutableSetOf<String>()
+        val now = System.currentTimeMillis()
+
+        fun add(item: TvHomeItem, providerPrefix: String): Boolean {
+            val key = listOf(
+                item.normalizedContentType,
+                item.contentId,
+                item.season?.toString().orEmpty(),
+                item.episode?.toString().orEmpty(),
+                item.videoId.orEmpty()
+            ).joinToString("|")
+            if (!seenEpisodeKeys.add(key)) return false
+            result += item.copy(providerId = "$providerPrefix|${item.providerId}")
+            return true
+        }
+
+        upcoming.asSequence()
+            .filter { it.isSeries && it.releaseTimeMs != null && it.releaseTimeMs <= now }
+            .sortedByDescending { it.releaseTimeMs ?: 0L }
+            .forEach { add(it, "continue_channel|new") }
+
+        continueWatching.asSequence()
+            .sortedByDescending { it.lastEngagementTimeMs ?: 0L }
+            .forEach { add(it, "continue_channel|resume") }
+
+        upNext.asSequence()
+            .sortedBy { it.releaseTimeMs ?: Long.MAX_VALUE }
+            .forEach { add(it, "continue_channel|next") }
 
         return result.dedupeByProvider()
     }
